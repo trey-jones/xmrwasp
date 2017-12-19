@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"encoding/json"
@@ -17,8 +17,12 @@ import (
 )
 
 var (
-	configInstance *config
-	oneTimeConfig  = sync.Once{}
+	// File specifies a file from which to read the config
+	// If empty, config will be read from the environment
+	File string
+
+	instance      *config
+	oneTimeConfig = sync.Once{}
 
 	ErrMissingRequiredConfig = errors.New("Required configuration option is missing.")
 )
@@ -98,7 +102,7 @@ func configFromEnv() error {
 		}
 		return err
 	}
-	configInstance = &cfg
+	instance = &cfg
 	return nil
 }
 
@@ -119,17 +123,16 @@ func configFromFile(r io.Reader) error {
 		return err
 	}
 
-	configInstance = &cfg
+	instance = &cfg
 	return nil
 }
 
-func Config() *config {
+func Get() *config {
 	var err error
 	oneTimeConfig.Do(func() {
-		filePath := *configFile
-		if filePath != "" {
+		if File != "" {
 			var f io.Reader
-			f, err = os.Open(filePath)
+			f, err = os.Open(File)
 			if err != nil {
 				return
 			}
@@ -142,5 +145,5 @@ func Config() *config {
 	if err != nil {
 		zap.S().Fatal("Unable to load config: ", err)
 	}
-	return configInstance
+	return instance
 }

@@ -3,10 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
-	"net/http"
 	"os"
 
 	"github.com/eyesore/wshandler"
+	"github.com/trey-jones/xmrwasp/config"
+	"github.com/trey-jones/xmrwasp/ws"
 	"go.uber.org/zap"
 )
 
@@ -31,30 +32,24 @@ func setupLogger() {
 }
 
 func main() {
+	// TODO define logging interface
 	setupLogger()
+	setOptions()
+
 	flag.Usage = usage
 
-	setOptions()
 	flag.Parse()
 	if args := flag.Args(); len(args) > 1 && (args[1] == "help" || args[1] == "-h") {
 		flag.Usage()
 		return
 	}
+	config.File = *configFile
 
 	wshandler.SetDebug(false)
 
-	if !Config().DisableWebsocket {
-		h := wshandler.NewConnector(NewWorker)
-		h.AllowAnyOrigin()
+	go ws.StartServer(zap.S())
 
-		http.Handle("/", h)
-		websocketPort := ":" + Config().WebsocketPort
-		err := http.ListenAndServe(websocketPort, nil)
-		if err != nil {
-			zap.S().Fatal("Failed to start server")
-		}
-	}
-	if !Config().DisableStratum {
+	if !config.Get().DisableStratum {
 		// start stratum server
 	}
 }

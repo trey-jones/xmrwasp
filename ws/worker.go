@@ -1,4 +1,4 @@
-package main
+package ws
 
 import (
 	"encoding/json"
@@ -8,34 +8,36 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/eyesore/wshandler"
+	"github.com/trey-jones/xmrwasp/proxy"
 )
 
 const (
-	workerTimeout = 2 * time.Minute
+	workerTimeout  = 1 * time.Minute
+	jobSendTimeout = 30 * time.Second
 )
 
 // worker does the work (of mining, well more like accounting) and implements the wshandler.Server interface
 type Worker struct {
-	wsConn     *wshandler.Conn
-	P          *Proxy
-	proxyIndex uint64
+	wsConn *wshandler.Conn
+	id     uint64
+	p      *proxy.Proxy
 
 	HashRate    int
 	LastJobTime time.Duration
 	Difficulty  int
 
 	waitForAuth chan bool
-	jobs        chan *Job
+	jobs        chan *proxy.Job
 	died        chan bool
 
 	origin string
 }
 
-// NewWorker is a ServerFactory
+// NewWorker is a wshandler.ServerFactory
 func NewWorker() (wshandler.Server, error) {
 	w := &Worker{
 		waitForAuth: make(chan bool, 1),
-		jobs:        make(chan *Job),
+		jobs:        make(chan *proxy.Job),
 		died:        make(chan bool, 1),
 	}
 
@@ -59,7 +61,7 @@ func (w *Worker) OnConnect(r *http.Request) error {
 }
 
 func (w *Worker) OnOpen() error {
-	GetDirector().workers <- w
+	proxy.GetDirector().Assign(w)
 
 	return nil
 }
@@ -81,25 +83,34 @@ func (w *Worker) OnMessage(payload []byte, isBinary bool) error {
 		w.Conn().Write(authedMessage, false)
 		w.waitForAuth <- true
 	case "submit":
-		w.P.submit <- f.Params
+		w.p.Submit(f.Params)
 	}
 	return nil
 }
 
 func (w *Worker) OnClose(wasClean bool, code int, reason error) error {
-	// much of this code came about in attempt to fix
-	// memory leaks and race conditions that ended up being
-	// some other problem
-	// it can *probably* go away
 	w.died <- true
-	if w.P != nil {
-		w.P.delWorker <- w
-		w.P.workerCount--
-	}
-	<-time.After(30 * time.Second)
-	w = nil
+	w.p.Remove(w)
 
 	return nil
+}
+
+// Worker interface
+
+func (w *Worker) ID() uint64 {
+	return w.id
+}
+
+func (w *Worker) SetID(i uint64) {
+	w.id = i
+}
+
+func (w *Worker) SetProxy(p *proxy.Proxy) {
+	w.p = p
+}
+
+func (w *Worker) Disconnect() {
+	w.Conn().Close()
 }
 
 // main worker thread - blocks while not receiving; share sending is on message thread
@@ -128,6 +139,17 @@ func (w *Worker) Work() {
 	}
 }
 
+func (w *Worker) NewJob(j *proxy.Job) {
+	// spawn a new thread so we don't block anything - we have to get the job to every worker
+	go func() {
+		timeout := time.NewTimer(jobSendTimeout)
+		select {
+		case w.jobs <- j:
+		case <-timeout.C:
+		}
+	}()
+}
+
 func (w *Worker) expectedHashes() uint32 {
 	// TODO - adjustable? does it matter? should it be higher?
 	// miners seem to introduce random data anyway...
@@ -141,10 +163,10 @@ type Frame struct {
 }
 
 type JobFrame struct {
-	FrameType string `json:"type"`
-	Params    *Job   `json:"params"`
+	FrameType string     `json:"type"`
+	Params    *proxy.Job `json:"params"`
 }
 
-func NewJobFrame(j *Job) *JobFrame {
+func NewJobFrame(j *proxy.Job) *JobFrame {
 	return &JobFrame{"job", j}
 }

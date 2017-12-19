@@ -1,9 +1,11 @@
-package main
+package proxy
 
 import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/trey-jones/xmrwasp/config"
 
 	"go.uber.org/zap"
 )
@@ -13,10 +15,11 @@ var (
 	oneTimeDirector  = sync.Once{}
 )
 
+// Director might be refactored to "ProxyGroup"
 type Director struct {
 	statInterval time.Duration
 
-	workers chan *Worker
+	workers chan Worker
 
 	currentProxyID uint64
 	proxies        map[uint64]*Proxy
@@ -35,16 +38,40 @@ func GetDirector() *Director {
 
 func newDirector() *Director {
 	d := &Director{
-		statInterval: time.Duration(Config().StatInterval) * time.Second,
-		workers:      make(chan *Worker, 1),
-		proxies:      make(map[uint64]*Proxy),
+		statInterval: time.Duration(config.Get().StatInterval) * time.Second,
+
+		// buffer to 1 so connections don't finish OnOpen before the proxy is ready
+		workers: make(chan Worker, 1),
+		proxies: make(map[uint64]*Proxy),
 	}
-	go d.assignWorkers()
+	go d.run()
 
 	return d
 }
 
-func (d *Director) assignWorkers() {
+// Assign feeds a worker into the pipeline
+func (d *Director) Assign(w Worker) {
+	d.workers <- w
+}
+
+func (d *Director) Use(w Worker) {
+	var pr *Proxy
+	for _, p := range d.proxies {
+		if p.Ready() {
+			pr = p
+			break
+		}
+	}
+	if pr == nil {
+		pr = New(d.nextProxyID())
+		pr.director = d
+		d.proxies[pr.ID] = pr
+	}
+
+	pr.Add(w)
+}
+
+func (d *Director) run() {
 	statPrinter := time.NewTicker(d.statInterval)
 	defer statPrinter.Stop()
 	for {
@@ -85,23 +112,6 @@ func (d *Director) printStats() {
 
 func (d *Director) removeProxy(pr *Proxy) {
 	delete(d.proxies, pr.ID)
-}
-
-func (d *Director) Use(w *Worker) {
-	var pr *Proxy
-	for _, p := range d.proxies {
-		if p.Ready() {
-			pr = p
-			break
-		}
-	}
-	if pr == nil {
-		pr = NewProxy(d.nextProxyID())
-		pr.director = d
-		d.proxies[pr.ID] = pr
-	}
-
-	pr.Add(w)
 }
 
 func (d *Director) nextProxyID() uint64 {
