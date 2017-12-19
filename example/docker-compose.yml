@@ -1,0 +1,12 @@
+version: '3'
+
+services:
+    proxy:
+
+    httpd:
+        image: httpd:2.4
+        ports: "80:80"
+        logging:
+            options:
+                max-size: "50"
+
