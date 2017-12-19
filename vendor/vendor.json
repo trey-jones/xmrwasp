@@ -52,11 +52,6 @@
 			"revisionTime": "2017-08-14T20:04:35Z"
 		},
 		{
-			"checksumSHA1": "k49z0J2wxjTdn4TflkWz9F2ILcw=",
-			"path": "github.com/trey-jones/stratum",
-			"revision": ""
-		},
-		{
 			"checksumSHA1": "HedK9m8E8iyib4bIBtIX7xprOgo=",
 			"path": "go.uber.org/atomic",
 			"revision": "8474b86a5a6f79c443ce4b2992817ff32cf208b8",

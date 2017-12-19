@@ -6,8 +6,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/trey-jones/stratum"
 	"github.com/trey-jones/xmrwasp/config"
+	"github.com/trey-jones/xmrwasp/stratum"
 )
 
 const (

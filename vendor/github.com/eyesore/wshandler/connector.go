@@ -1,52 +1,27 @@
 package wshandler
 
 import (
-	"log"
 	"net/http"
 	"time"
-
-	"go.uber.org/zap"
 
 	"github.com/gorilla/websocket"
 )
 
 var (
-	// debug can be set to true to enable logging and verbose http errors
+	// debug can be set to true to enable verbose http errors
 	debug = false
-	lo    *zap.SugaredLogger
 )
-
-func init() {
-	initlogger()
-}
-
-func initlogger() {
-	var l *zap.Logger
-	var err error
-	if debug {
-		l, err = zap.NewDevelopment()
-	} else {
-		l, err = zap.NewProduction()
-	}
-	if err != nil {
-		log.Fatal("Unable to initialize lo (for some reason)")
-	}
-	lo = l.Sugar()
-}
 
 // SetDebug turns debug output on or off
 func SetDebug(on bool) {
 	debug = on
-	initlogger()
 }
 
 func onConnect(s Server, r *http.Request) error {
-	lo.Debug("Attempting socket connection.")
 	return s.OnConnect(r)
 }
 
 func onOpen(s Server) error {
-	lo.Debug("Opened new connection.")
 	c := s.Conn()
 	c.Conn.SetReadLimit(c.MaxMessageSize)
 	c.Conn.SetReadDeadline(time.Now().Add(c.PongTimeout))
@@ -57,7 +32,6 @@ func onOpen(s Server) error {
 		return nil
 	})
 
-	lo.Debug("Starting socket i/o")
 	err := s.OnOpen()
 	if err != nil {
 		return err
@@ -68,12 +42,10 @@ func onOpen(s Server) error {
 }
 
 func onMessage(s Server, payload []byte, isBinary bool) error {
-	lo.Debug("Received message: ", string(payload))
 	return s.OnMessage(payload, isBinary)
 }
 
 func onClose(s Server, wasClean bool, code int, reason error) error {
-	lo.Debug("Closing channel.  Clean? ", wasClean, " --- Reason: ", reason)
 	return s.OnClose(wasClean, code, reason)
 }
 
