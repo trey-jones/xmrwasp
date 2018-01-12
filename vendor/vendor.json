@@ -40,6 +40,30 @@
 			"revisionTime": "2017-08-14T20:04:35Z"
 		},
 		{
+			"checksumSHA1": "n3vXZ9Cod7lHR6jnuFTsggU3860=",
+			"path": "github.com/posener/wstest",
+			"revision": "a9f917d6b1498ca5dc74585e4cc1aff4be765092",
+			"revisionTime": "2017-12-28T17:45:32Z"
+		},
+		{
+			"checksumSHA1": "W4NoqtM7ty7AUJ5txsl+wkA4si8=",
+			"path": "github.com/posener/wstest/pipe",
+			"revision": "a9f917d6b1498ca5dc74585e4cc1aff4be765092",
+			"revisionTime": "2017-12-28T17:45:32Z"
+		},
+		{
+			"checksumSHA1": "UFfrGEGo+lZLwF0XjZraKUfvdUY=",
+			"path": "github.com/powerman/rpc-codec/jsonrpc2",
+			"revision": "dc37adcbbca7e1a4725abae2425227078cac395d",
+			"revisionTime": "2017-12-12T01:13:14Z"
+		},
+		{
+			"checksumSHA1": "zfZSSCAAOBk4LjTWK9KGE+j2fWM=",
+			"path": "github.com/sourcegraph/jsonrpc2",
+			"revision": "c6c7b9aa99fb76ee5460ccd3912ba35d419d493d",
+			"revisionTime": "2017-08-02T18:50:46Z"
+		},
+		{
 			"checksumSHA1": "mGbTYZ8dHVTiPTTJu3ktp+84pPI=",
 			"path": "github.com/stretchr/testify/assert",
 			"revision": "2aa2c176b9dab406a6970f6a55f513e8a8c8b18f",
@@ -50,6 +74,11 @@
 			"path": "github.com/stretchr/testify/require",
 			"revision": "2aa2c176b9dab406a6970f6a55f513e8a8c8b18f",
 			"revisionTime": "2017-08-14T20:04:35Z"
+		},
+		{
+			"checksumSHA1": "k49z0J2wxjTdn4TflkWz9F2ILcw=",
+			"path": "github.com/trey-jones/stratum",
+			"revision": ""
 		},
 		{
 			"checksumSHA1": "HedK9m8E8iyib4bIBtIX7xprOgo=",

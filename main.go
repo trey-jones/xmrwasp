@@ -7,6 +7,7 @@ import (
 
 	"github.com/eyesore/wshandler"
 	"github.com/trey-jones/xmrwasp/config"
+	"github.com/trey-jones/xmrwasp/tcp"
 	"github.com/trey-jones/xmrwasp/ws"
 	"go.uber.org/zap"
 )
@@ -26,8 +27,12 @@ func setOptions() {
 }
 
 func setupLogger() {
-	// TODO handle this remote possibility
-	l, _ := zap.NewDevelopment()
+	var l *zap.Logger
+	if config.Get().Debug {
+		l, _ = zap.NewDevelopment()
+	} else {
+		l, _ = zap.NewProduction()
+	}
 	zap.ReplaceGlobals(l)
 }
 
@@ -46,10 +51,17 @@ func main() {
 	config.File = *configFile
 
 	wshandler.SetDebug(false)
+	holdOpen := make(chan bool, 1)
 
-	go ws.StartServer(zap.S())
-
-	if !config.Get().DisableStratum {
-		// start stratum server
+	if !config.Get().DisableWebsocket {
+		go ws.StartServer(zap.S())
 	}
+	if !config.Get().DisableTCP {
+		go tcp.StartServer(zap.S())
+	}
+
+	if !config.Get().Background {
+		<-holdOpen
+	}
+	zap.S().Sync()
 }

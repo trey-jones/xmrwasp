@@ -2,6 +2,8 @@ package proxy
 
 import (
 	"errors"
+	"math"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -11,24 +13,29 @@ import (
 )
 
 const (
-	// clock over after hitting this value to prevent overflow
-	MaxUint = ^uint64(0) - 1000
+	// MaxUint protects IDs from overflow if the process runs for thousands of years
+	MaxUint = ^uint64(0)
 
-	// TODO - worker computes expected hashes - also, potentially increase this to begin with?
-	expectedHashes = 50000
+	// TODO - worker could compute expected hashes
+	expectedHashes = 0x7a120 // 500k, not really expected, just plenty of work
 
 	// TODO adjust - lower means more connections to pool, potentially fewer stales if that is a problem
 	maxProxyWorkers = 1024
+
+	donateCycle time.Duration = 3600 // seconds
+	// amount of time to keep the donate connection open after donation ends
+	donateShutdownDelay = 30 * time.Second
 )
 
 var (
 	keepAliveInterval = 5 * time.Minute
 
-	ErrBadJobID       = errors.New("Submitted Job ID is not longer valid.")
-	ErrDuplicateShare = errors.New("Share has already been submitted for current job.")
-	ErrMalformedShare = errors.New("Share is missing required data.")
+	ErrBadJobID       = errors.New("invalid job id")
+	ErrDuplicateShare = errors.New("duplicate share")
+	ErrMalformedShare = errors.New("malformed share")
 )
 
+// Worker does the work for the proxy.  It exposes methods that allow interface with the proxy.
 type Worker interface {
 	// ID is used to distinguish this worker from other workers on the proxy.
 	ID() uint64
@@ -38,10 +45,7 @@ type Worker interface {
 	// Workers must implement this method to establish communication with their assigned
 	// proxy.  The proxy connection should be stored in order to 1. Submit Shares and 2. Disconnect Cleanly
 	SetProxy(*Proxy)
-
-	// Work will run on its own thread.  It should do any work that needs to be done to
-	// ensure that job data gets to the client, and shares get back to the proxy.
-	Work()
+	Proxy() *Proxy
 
 	// Disconnect closes the connection to the proxy from the worker.
 	// Ideally it sets up the worker to try and reconnect to a new proxy through the director.
@@ -50,220 +54,388 @@ type Worker interface {
 	NewJob(*Job)
 }
 
-// proxy manages a group of workers.
+type share struct {
+	AuthID string `json:"id"`
+	JobID  string `json:"job_id"`
+	Nonce  string `json:"nonce"`
+	Result string `json:"result"`
+
+	Error    chan error        `json:"-"`
+	Response chan *StatusReply `json:"-"`
+}
+
+// might return an invalid share, and that's fine - will fail validation
+func newShare(params map[string]interface{}) *share {
+	s := &share{
+		Error:    make(chan error, 1),
+		Response: make(chan *StatusReply, 1),
+	}
+
+	if jobID, ok := params["job_id"]; ok {
+		s.JobID = jobID.(string)
+	}
+
+	if nonce, ok := params["nonce"]; ok {
+		s.Nonce = nonce.(string)
+	}
+
+	if result, ok := params["result"]; ok {
+		s.Result = result.(string)
+	}
+
+	return s
+}
+
+// Proxy manages a group of workers.
 type Proxy struct {
 	ID       uint64
 	SC       *stratum.Client
+	DC       *stratum.Client
+	SS       *stratum.Server
 	director *Director
 
+	authID     string // identifies the proxy to the pool
 	aliveSince time.Time
 	shares     uint64
 
 	workerCount int
 
 	// workers have to be ID'd so they can be removed when they die
-	workerIDs       chan uint64
-	workers         map[uint64]Worker
-	currentWorkerID uint64
-	HashRate        int
+	workerIDs chan uint64
+	workers   map[uint64]Worker
+
+	donateInterval time.Duration
+	donateLength   time.Duration
+	donating       bool
+	donateAddr     string
 
 	addWorker chan Worker
 	delWorker chan Worker
-	submit    chan map[string]interface{}
 
-	ready        bool
+	submissions chan *share
+	donations   chan *share
+
+	notify  chan stratum.Notification
+	dnotify chan stratum.Notification // donation jobs
+
+	ready bool
+
 	currentJob   *Job
 	currentBlob  []byte
 	currentNonce uint32
+	prevJob      *Job
+
+	donateJob     *Job
+	donateBlob    []byte
+	donateNonce   uint32
+	prevDonateJob *Job
+
+	jobMu     sync.Mutex
+	jobWaiter *sync.WaitGroup // waits for the first job
 }
 
+// New creates a new proxy, starts the work thread, and returns a pointer to it.
 func New(id uint64) *Proxy {
 	p := &Proxy{
 		ID:         id,
 		aliveSince: time.Now(),
 		workerIDs:  make(chan uint64, 5),
 		workers:    make(map[uint64]Worker),
-		addWorker:  make(chan Worker),
-		delWorker:  make(chan Worker, 1),
-		submit:     make(chan map[string]interface{}),
-		ready:      true,
-	}
-	sc, err := stratum.NewClient(config.Get().PoolAddr, zap.S())
-	if err != nil {
-		// fallback, retry, anything!
-		zap.S().Fatal("Unable to connect to remote server")
-	}
-	p.SC = sc
 
-	go p.Run()
+		currentJob:    &Job{},
+		prevJob:       &Job{},
+		donateJob:     &Job{},
+		prevDonateJob: &Job{},
+
+		addWorker: make(chan Worker),
+		delWorker: make(chan Worker, 1),
+
+		submissions: make(chan *share),
+		donations:   make(chan *share),
+
+		ready:     true,
+		donating:  false,
+		jobWaiter: &sync.WaitGroup{},
+	}
+	p.jobWaiter.Add(1)
+
+	ss := stratum.NewServer()
+	p.SS = ss
+	p.SS.RegisterName("mining", &Mining{})
+	zap.S().Debug("RPC server is listening on proxy ", p.ID)
+
+	p.configureDonations()
+
+	// TODO how many routines does the proxy require by itself at this point?
+	go p.generateIDs()
+	go p.run()
 	return p
 }
 
-func (p *Proxy) Ready() bool {
-	// once we fill up, make a new proxy - not sure if this is the best idea, or not
-	return p.ready && p.workerCount < maxProxyWorkers
-}
+func (p *Proxy) generateIDs() {
+	var currentWorkerID uint64
 
-func (p *Proxy) Add(w Worker) {
-	w.SetProxy(p)
-	w.SetID(p.nextWorkerID())
-	go w.Work()
-	p.addWorker <- w
-	p.workerCount++
+	for {
+		currentWorkerID++
+		p.workerIDs <- currentWorkerID
+	}
 }
 
 // nextWorkerID returns the next sequential orderID.  It is not safe for concurrent use.
 func (p *Proxy) nextWorkerID() uint64 {
-	if p.currentWorkerID >= MaxUint {
-		p.currentWorkerID = 0
-	}
-	p.currentWorkerID++
-	return p.currentWorkerID
+	return <-p.workerIDs
 }
 
-func (p *Proxy) Run() {
+func (p *Proxy) run() {
 	p.login()
 	// login blocks until first job is received
 	keepalive := time.NewTicker(keepAliveInterval)
+	donateStart := time.NewTimer(p.donateInterval)
+	donateEnd := time.NewTimer(p.donateLength)
+	donateEnd.Stop() // will be reset after first donate period starts
 	defer keepalive.Stop()
 	defer p.shutdown()
 	for {
 		select {
 		// these are from workers
+		case s := <-p.submissions:
+			// zap.S().Debug("Submitting share to primary pool: ", s.JobID)
+			p.handleSubmit(s, p.SC)
+		case s := <-p.donations:
+			// zap.S().Debug("Submitting share to donate server: ", s.JobID)
+			p.handleSubmit(s, p.DC)
 		case w := <-p.addWorker:
 			p.receiveWorker(w)
-		case share := <-p.submit:
-			if err := p.validateShare(share); err != nil {
-				zap.S().Info("Rejecting share: ", share)
-				zap.S().Info("Reason: ", err)
-				break
-			}
-			submitRequest := stratum.Request{
-				Method: "submit",
-				Params: share,
-			}
-			p.SC.Requests <- &submitRequest
-			// test dup share
-			// <-time.After(5 * time.Second)
-			// p.SC.Requests <- &submitRequest
 		case w := <-p.delWorker:
 			p.removeWorker(w)
 
-		// these are from  the client
-		case resp := <-p.SC.Received:
-			if status, ok := resp.Result["status"]; ok && status == "OK" {
-				zap.S().Info("Share accepted on proxy ", p.ID)
-				p.shares++
-			}
-			// TODO notify worker of accepted
-			// case notif := <-p.SC.Notifications:
-		case params := <-p.SC.Jobs:
-			job := NewJobFromServer(params)
-			err := p.Handle(job)
-			if err != nil {
-				// log and wait for the next job?
-				zap.S().Error("Error processing job: ", job)
-				zap.S().Error(err)
-			}
-		case err := <-p.SC.Errors:
-			zap.S().Error("got err: ", err)
-			// all errors seem to be fatal, resulting in worker ban or server gone
-			// so wekill the proxy and try to connect with a new one
-			return
-		case <-keepalive.C:
-			keepaliveRequest := stratum.Request{
-				Method: "keepalived",
-				Params: make(map[string]interface{}),
-			}
-			p.SC.Requests <- &keepaliveRequest
-		}
+		// this comes from the stratum client
+		case notif := <-p.notify:
+			p.handleNotification(notif, false)
+		case notif := <-p.dnotify:
+			p.handleNotification(notif, true)
 
+		// these are based on known regular intervals
+		case <-donateStart.C:
+			zap.S().Debug("Switching to donation server")
+			p.donate()
+			donateEnd.Reset(p.donateLength)
+			// donateEnd.Reset(2 * time.Minute)
+		case <-donateEnd.C:
+			zap.S().Debug("Finished donation cycle. Cleaning up.")
+			p.undonate()
+			donateStart.Reset(p.donateInterval)
+		case <-keepalive.C:
+			reply := StatusReply{}
+			err := p.SC.Call("keepalived", make(map[string]interface{}), &reply)
+			if reply.Error != nil {
+				err = reply.Error
+			}
+			if err != nil {
+				zap.S().Error("Received error from keepalive request: ", err)
+				return
+			}
+			zap.S().Debug("Keepalived response: ", reply)
+		}
 	}
 }
 
-func (p *Proxy) Submit(share map[string]interface{}) {
-	// TODO return channel for response, do async
-	p.submit <- share
-}
-
-func (p *Proxy) Handle(job *Job) (err error) {
-	p.currentJob = job
-	p.currentNonce, p.currentBlob, err = job.Nonce()
+func (p *Proxy) donate() {
+	zap.S().Debug("Dialing out to: ", p.donateAddr)
+	dc, err := stratum.Dial("tcp", p.donateAddr)
 	if err != nil {
+		// this makes it too easy to avoid donate, do a retry or something?
+		zap.S().Error("Failed to connect to donate server")
 		return
 	}
-	for _, w := range p.workers {
-		p.sendJob(w)
+
+	params := map[string]interface{}{}
+	reply := LoginReply{}
+	err = dc.Call("login", params, &reply)
+	if reply.Error != nil {
+		err = reply.Error
 	}
+	if err != nil {
+		// again, retry or something
+		zap.S().Error("Failed to login to donate server")
+		return
+	}
+
+	p.DC = dc
+	p.jobMu.Lock()
+	p.donating = true
+	p.jobMu.Unlock()
+	p.dnotify = p.DC.Notifications()
+
+	err = p.handleDonateJob(reply.Job)
+	if err != nil {
+		zap.S().Error("Error handling new job from donation server.")
+		// try get job?
+		return
+	}
+	zap.S().Debug("Starting donation loop")
+}
+
+func (p *Proxy) undonate() {
+	p.jobMu.Lock()
+	p.donating = false
+	p.jobMu.Unlock()
+	// give client 30 seconds, then DC
+	time.AfterFunc(donateShutdownDelay, func() {
+		zap.S().Debug("Shutting down donation conn")
+		p.DC.Close()
+	})
+	p.handleJob(p.currentJob)
+}
+
+func (p *Proxy) handleJob(job *Job) (err error) {
+	job.SubmittedNonces = make([]string, 0)
+
+	p.jobMu.Lock()
+	p.prevJob, p.currentJob = p.currentJob, job
+	p.currentNonce, p.currentBlob, err = job.Nonce()
+	p.jobMu.Unlock()
+
+	if err != nil || p.donating {
+		// zap.S().Debug("Skipping regular job broadcast: ", err)
+		return
+	}
+
+	// zap.S().Debug("Broadcasting new regular job: ", job.ID)
+	p.broadcastJob()
 	return
 }
 
-func (p *Proxy) Remove(w Worker) {
-	p.delWorker <- w
-	p.workerCount--
+// broadcast a job to all workers
+func (p *Proxy) broadcastJob() {
+	for _, w := range p.workers {
+		go w.NewJob(p.NextJob())
+	}
 }
 
-func (p *Proxy) login() {
-	loginRequest := stratum.Request{
-		Method: "login",
-		Params: map[string]interface{}{
-			"login": config.Get().PoolLogin,
-			"pass":  config.Get().PoolPassword,
-		},
+func (p *Proxy) handleDonateJob(job *Job) (err error) {
+	job.SubmittedNonces = make([]string, 0)
+
+	// we can use the same mutex here right?
+	p.jobMu.Lock()
+	if p.donateJob == nil {
+		p.donateJob = job
 	}
-	p.SC.Requests <- &loginRequest
-	select {
-	case params := <-p.SC.Jobs:
-		job := NewJobFromServer(params)
-		err := p.Handle(job)
+	p.prevDonateJob, p.donateJob = p.donateJob, job
+	p.donateNonce, p.donateBlob, err = job.Nonce()
+	p.jobMu.Unlock()
+
+	// the donate client will remain connected for ~30s after donate period,
+	// so ignore any new jobs at that point
+	if err != nil || !p.donating {
+		// zap.S().Debug("Skipping donate job broadcast: ", err)
+		return
+	}
+	// zap.S().Debug("Broadcasting new donate job:", job.ID)
+	p.broadcastJob()
+	return
+}
+
+func (p *Proxy) handleNotification(notif stratum.Notification, donate bool) {
+	switch notif.Method {
+	case "job":
+		// not a safe type assertion perhaps
+		job := NewJobFromServer(notif.Params.(map[string]interface{}))
+		var err error
+		if !donate {
+			err = p.handleJob(job)
+		} else {
+			err = p.handleDonateJob(job)
+		}
 		if err != nil {
 			// log and wait for the next job?
 			zap.S().Error("Error processing job: ", job)
 			zap.S().Error(err)
 		}
-	case err := <-p.SC.Errors:
-		zap.S().Error("Login error received for proxy ", p.ID, ": ", err)
-		p.shutdown()
-		return
-	case <-time.After(30 * time.Second):
+	default:
+		zap.S().Infow("Received notification from server: ",
+			"method", notif.Method,
+			"params", notif.Params,
+		)
 	}
 }
 
-func (p *Proxy) validateShare(s map[string]interface{}) error {
-	if jobID, ok := s["job_id"]; !ok || jobID.(string) != p.currentJob.ID {
+func (p *Proxy) login() {
+	sc, err := stratum.Dial("tcp", config.Get().PoolAddr)
+	if err != nil {
+		// TODO fallback, retry, anything!
+		zap.S().Fatal("Unable to connect to remote server", err)
+	}
+	zap.S().Debug("Client made pool connection.")
+	p.SC = sc
+
+	p.notify = p.SC.Notifications()
+	params := map[string]interface{}{
+		"login": config.Get().PoolLogin,
+		"pass":  config.Get().PoolPassword,
+	}
+	reply := LoginReply{}
+	err = p.SC.Call("login", params, &reply)
+	if err != nil {
+		zap.S().Fatal("Unable to login to pool server: ", err)
+	}
+	p.authID = reply.ID
+	err = p.handleJob(reply.Job)
+	if err != nil {
+		zap.S().Error("Error processing job: ", reply.Job)
+		// continue and just wait for the next job?
+		// this shouldn't happen
+	}
+	// now we have a job, so release jobs
+	p.jobWaiter.Done()
+}
+
+func (p *Proxy) validateShare(s *share) error {
+	var job *Job
+	switch {
+	case s.JobID == p.currentJob.ID:
+		job = p.currentJob
+	case s.JobID == p.prevJob.ID:
+		job = p.prevJob
+	case s.JobID == p.donateJob.ID:
+		job = p.donateJob
+	case s.JobID == p.prevDonateJob.ID:
+		job = p.prevDonateJob
+	default:
 		return ErrBadJobID
 	}
-	inonce, ok := s["nonce"]
-	if !ok {
-		return ErrMalformedShare
-	}
-	nonce := inonce.(string)
-	for _, n := range p.currentJob.SubmittedNonces {
-		if n == nonce {
+	for _, n := range job.SubmittedNonces {
+		if n == s.Nonce {
 			return ErrDuplicateShare
 		}
 	}
-	p.currentJob.SubmittedNonces = append(p.currentJob.SubmittedNonces, nonce)
-
 	return nil
-}
-
-func (p *Proxy) sendJob(w Worker) {
-	j := NewJob(p.currentBlob, p.currentNonce, p.currentJob.ID, p.currentJob.Target)
-	p.currentNonce += expectedHashes
-	w.NewJob(j)
 }
 
 func (p *Proxy) receiveWorker(w Worker) {
 	p.workers[w.ID()] = w
-
-	if p.currentJob != nil {
-		p.sendJob(w)
-	}
+	p.workerCount++
 }
 
 func (p *Proxy) removeWorker(w Worker) {
 	delete(p.workers, w.ID())
+	p.workerCount--
+	// potentially check for len(workers) == 0, start timer to spin down proxy if empty
+	// like apache, we might expire a proxy at some point anyway, just to try and reclaim potential resources
+	// in workers map, avert id overflow, etc.
+}
+
+func (p *Proxy) configureDonations() {
+	// p.donateAddr = "donate.xmrwasp.com:3333"
+	p.donateAddr = "localhost:13334"
+	donateLevel := config.Get().DonateLevel
+	if donateLevel <= 0 {
+		donateLevel = 1
+	}
+	p.donateLength = (time.Duration(math.Floor(float64(donateCycle)*(float64(donateLevel)/100))) * time.Second)
+	p.donateInterval = (donateCycle * time.Second) - p.donateLength
+	zap.S().Debug("DonateLength is: ", p.donateLength)
+	zap.S().Debug("DonateInterval is: ", p.donateInterval)
 }
 
 func (p *Proxy) shutdown() {
@@ -273,4 +445,97 @@ func (p *Proxy) shutdown() {
 		w.Disconnect()
 	}
 	p.director.removeProxy(p)
+}
+
+func (p *Proxy) isReady() bool {
+	// the worker count read is a race TODO
+	return p.ready && p.workerCount < maxProxyWorkers
+}
+
+func (p *Proxy) handleSubmit(s *share, c *stratum.Client) {
+	defer func() {
+		close(s.Response)
+		close(s.Error)
+	}()
+	if c == nil {
+		zap.S().Debug("Dropping share due to nil client for job: ", s.JobID)
+		s.Error <- errors.New("no client to handle share")
+		return
+	}
+
+	if err := p.validateShare(s); err != nil {
+		zap.S().Debug("Rejecting share with: ", err)
+		s.Error <- err
+		return
+	}
+
+	s.AuthID = p.authID
+	reply := StatusReply{}
+	if err := c.Call("submit", s, &reply); err != nil {
+		// if this happens, we probably need to disconnect and take a break
+		s.Error <- err
+		return
+	}
+	if reply.Status == "OK" {
+		p.shares++
+	}
+
+	// zap.S().Debugf("Proxy %v share submit response: %s", p.ID, reply)
+	s.Response <- &reply
+	s.Error <- nil
+	return
+}
+
+// Submit sends worker shares to the pool.  Safe for concurrent use.
+func (p *Proxy) Submit(params map[string]interface{}) (*StatusReply, error) {
+	s := newShare(params)
+
+	if s.JobID == "" {
+		return nil, ErrBadJobID
+	}
+	if s.Nonce == "" {
+		return nil, ErrMalformedShare
+	}
+
+	// if it matters - locking jobMu should be fine
+	// there might be a race for the job ids's but it shouldn't matter
+	if s.JobID == p.currentJob.ID || s.JobID == p.prevJob.ID {
+		p.submissions <- s
+	} else if s.JobID == p.donateJob.ID || s.JobID == p.prevDonateJob.ID {
+		p.donations <- s
+	} else {
+		return nil, ErrBadJobID
+	}
+
+	return <-s.Response, <-s.Error
+}
+
+// NextJob gets gets the next job (on the current block) and increments the nonce
+func (p *Proxy) NextJob() *Job {
+	p.jobWaiter.Wait() // only waits for first job from login
+	p.jobMu.Lock()
+	defer p.jobMu.Unlock()
+	var j *Job
+	if !p.donating {
+		j = NewJob(p.currentBlob, p.currentNonce, p.currentJob.ID, p.currentJob.Target)
+		p.currentNonce += expectedHashes
+	} else {
+		j = NewJob(p.donateBlob, p.donateNonce, p.donateJob.ID, p.donateJob.Target)
+		p.donateNonce += expectedHashes
+	}
+
+	return j
+}
+
+// Add a worker to the proxy - safe for concurrent use.
+func (p *Proxy) Add(w Worker) {
+	w.SetProxy(p)
+	w.SetID(p.nextWorkerID())
+
+	p.addWorker <- w
+}
+
+// Remove a worker from the proxy - safe for concurrent use.
+func (p *Proxy) Remove(w Worker) {
+	p.delWorker <- w
 }

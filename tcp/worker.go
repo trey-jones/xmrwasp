@@ -1,13 +1,12 @@
-package ws
+package tcp
 
 import (
 	"context"
-	"net/http"
+	"net"
 	"time"
 
 	"go.uber.org/zap"
 
-	"github.com/eyesore/wshandler"
 	"github.com/trey-jones/xmrwasp/proxy"
 	"github.com/trey-jones/xmrwasp/stratum"
 )
@@ -19,58 +18,42 @@ const (
 
 // worker does the work (of mining, well more like accounting) and implements the wshandler.Server interface
 type Worker struct {
-	wsConn *wshandler.Conn
-	id     uint64
-	p      *proxy.Proxy
+	conn net.Conn
+	id   uint64
+	p    *proxy.Proxy
 
 	// codec will be used directly for sending jobs
 	// this is not ideal, and it would be nice to do this differently
-	codec *stratum.CoinhiveServerCodec
+	codec *stratum.DefaultServerCodec
 
 	jobs chan *proxy.Job
 }
 
-// NewWorker is a wshandler.Factory
-func NewWorker() (wshandler.Handler, error) {
+// SpawnWorker spawns a new TCP worker and adds it to a proxy
+func SpawnWorker(conn net.Conn) {
 	w := &Worker{
+		conn: conn,
 		jobs: make(chan *proxy.Job),
 	}
-
-	return w, nil
-}
-
-func (w *Worker) Conn() *wshandler.Conn {
-	return w.wsConn
-}
-
-func (w *Worker) SetConn(c *wshandler.Conn) {
-	w.wsConn = c
-}
-
-func (w *Worker) OnConnect(r *http.Request) error {
-	// if protocols := r.Header.Get("sec-websocket-protocol"); protocols != "" {
-	//     protocolList := strings.Split(protocols, ",")
-	//     w.Conn().ResponseHeader.Add("sec-websocket-protocol", "json")
-	// }
-	return nil
-}
-
-func (w *Worker) OnOpen() error {
 	ctx := context.WithValue(context.Background(), "worker", w)
-	codec := stratum.NewCoinhiveServerCodecContext(ctx, w.Conn())
-	w.codec = codec.(*stratum.CoinhiveServerCodec)
+	codec := stratum.NewDefaultServerCodecContext(ctx, w.Conn())
+	w.codec = codec.(*stratum.DefaultServerCodec)
 
 	p := proxy.GetDirector().NextProxy()
 	p.Add(w)
-	go w.Proxy().SS.ServeCodec(codec)
 
-	return nil
+	// blocks until disconnect
+	w.Proxy().SS.ServeCodec(codec)
+
+	w.p.Remove(w)
 }
 
-func (w *Worker) OnClose(wasClean bool, code int, reason error) error {
-	w.p.Remove(w)
+func (w *Worker) Conn() net.Conn {
+	return w.conn
+}
 
-	return nil
+func (w *Worker) SetConn(c net.Conn) {
+	w.conn = c
 }
 
 // Worker interface
@@ -100,10 +83,10 @@ func (w *Worker) NewJob(j *proxy.Job) {
 		zap.S().Error("Error sending job to worker: ", err)
 		w.Disconnect()
 	}
+	// other actions? shut down worker?
 }
 
 func (w *Worker) expectedHashes() uint32 {
-	// TODO - adjustable? does it matter? should it be higher?
-	// miners seem to introduce random data anyway...
+	// this is a complete unknown at this time.
 	return 0x7a120
 }

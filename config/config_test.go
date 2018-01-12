@@ -19,7 +19,7 @@ func testSetRequiredEnvConfigs() {
 	os.Setenv("XMRWASP_URL", "fakeurl")
 	os.Setenv("XMRWASP_LOGIN", "fakelogin")
 	os.Setenv("XMRWASP_PASSWORD", "fakepassword")
-	os.Setenv("XMRWASP_NOSTRATUM", "true")
+	os.Setenv("XMRWASP_NOTCP", "true")
 }
 
 func testGetConfigDefaults() (defaultStrings map[string]string, defaultInts map[int]int) {
@@ -46,7 +46,7 @@ func testDefaultsAreSet(t *testing.T) {
 			t.Errorf("%v did not match expected value %v", value, expectedValue)
 		}
 	}
-	if instance.DisableStratum != true {
+	if instance.DisableTCP != true {
 		t.Errorf("Stratum should be disabled by default.")
 	}
 }
@@ -117,7 +117,7 @@ func TestFileDefaultConfigs(t *testing.T) {
 func TestFileConfigAccuracy(t *testing.T) {
 	defer reset()
 	cfg := strings.NewReader(`{
-        "nostratum": true,
+        "notcp": true,
         "url": "fakeURL",
         "login": "fakeLogin",
         "password": "fakePassword",
@@ -128,7 +128,7 @@ func TestFileConfigAccuracy(t *testing.T) {
 		t.Error("Got unexpected config error: ", err)
 	}
 
-	require.Equal(t, true, instance.DisableStratum)
+	require.Equal(t, true, instance.DisableTCP)
 	require.Equal(t, "8080", instance.WebsocketPort) // default
 	require.Equal(t, "fakeURL", instance.PoolAddr)
 	require.Equal(t, "fakeLogin", instance.PoolLogin)

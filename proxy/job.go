@@ -11,14 +11,14 @@ const (
 )
 
 type Job struct {
-	Blob            string `json:"blob"`
-	ID              string `json:"job_id"`
-	Target          string `json:"target"`
-	SubmittedNonces []string
+	Blob            string   `json:"blob"`
+	ID              string   `json:"job_id"`
+	Target          string   `json:"target"`
+	SubmittedNonces []string `json:"-"`
 }
 
 func NewJobFromServer(job map[string]interface{}) *Job {
-	j := &Job{SubmittedNonces: make([]string, 0)}
+	j := &Job{}
 	j.Blob, _ = job["blob"].(string)
 	j.ID, _ = job["job_id"].(string)
 	j.Target, _ = job["target"].(string)

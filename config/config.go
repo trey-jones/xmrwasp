@@ -21,15 +21,19 @@ var (
 	// If empty, config will be read from the environment
 	File string
 
-	instance      *config
+	instance      *Config
 	oneTimeConfig = sync.Once{}
 
-	ErrMissingRequiredConfig = errors.New("Required configuration option is missing.")
+	// ErrMissingRequiredConfig indicates that required configuration has not been set.
+	ErrMissingRequiredConfig = errors.New("missing required config")
 )
 
-type config struct {
+// Config holds the global application configuration.
+type Config struct {
+	Debug bool `envconfig:"debug" json:"debug"`
+
 	DisableWebsocket bool   `envconfig:"noweb" json:"noweb"`
-	DisableStratum   bool   `envconfig:"nostratum" default:"true" json:"nostratum"`
+	DisableTCP       bool   `envconfig:"notcp" default:"true" json:"notcp"`
 	WebsocketPort    string `envconfig:"wsport" default:"8080" json:"wsport"`
 	StratumPort      string `envconfig:"strport" default:"1111" json:"strport"`
 
@@ -48,7 +52,7 @@ type config struct {
 }
 
 // This only needs to be run if read from JSON
-func validateAndSetDefaults(c *config) error {
+func validateAndSetDefaults(c *Config) error {
 	// TODO cleanup?
 	val := reflect.ValueOf(c)
 	refType := reflect.TypeOf(c)
@@ -88,12 +92,12 @@ func validateAndSetDefaults(c *config) error {
 			return ErrMissingRequiredConfig
 		}
 	}
-	// zap.S().Debug("Configs after validation: ", c)
+
 	return nil
 }
 
 func configFromEnv() error {
-	cfg := config{}
+	cfg := Config{}
 	err := envconfig.Process("xmrwasp", &cfg)
 	if err != nil {
 		if strings.Contains(err.Error(), "required") {
@@ -112,12 +116,11 @@ func configFromFile(r io.Reader) error {
 		return errors.Wrap(err, "Failed to read config file.")
 	}
 
-	cfg := config{}
+	cfg := Config{}
 	err = json.Unmarshal(data, &cfg)
 	if err != nil {
 		return errors.Wrap(err, "Failed to parse JSON.")
 	}
-	// zap.S().Debug("config values after umarshal: ", cfg)
 	err = validateAndSetDefaults(&cfg)
 	if err != nil {
 		return err
@@ -127,7 +130,8 @@ func configFromFile(r io.Reader) error {
 	return nil
 }
 
-func Get() *config {
+// Get returns the global configuration singleton.
+func Get() *Config {
 	var err error
 	oneTimeConfig.Do(func() {
 		if File != "" {

@@ -1,13 +1,28 @@
 package wshandler
 
 import (
+	"bytes"
+	"errors"
+	"io"
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
 
-// Conn exposes per-socket connection configs, and the Write and Close methods
+const (
+	ModeBinary = websocket.BinaryMessage
+	ModeText   = websocket.TextMessage
+)
+
+var (
+	// ErrWriteTimeout means that outbox was blocking for longer than Conn.WriteTimeout
+	ErrWriteTimeOut = errors.New("write timed out")
+)
+
+// Conn exposes per-socket connection configs, and implements io.ReadWriteCloser
+// TODO - implement net.Conn?
 type Conn struct {
 	Conn *websocket.Conn
 	// ResponseHeader can be modified eg. in OnConnect to be included in the initial http response
@@ -22,33 +37,92 @@ type Conn struct {
 	MaxMessageSize int64
 	WriteTimeout   time.Duration
 
-	outbox      chan message
+	messageMode int
+	outbox      chan *message
+	inbox       chan *message
 	closeSignal chan bool
 }
 
-func (c *Conn) Write(m []byte, isBinary bool) {
-	// TODO log type
-	lo.Debug("Sending message: ", string(m))
-	out := message{m, isBinary}
-	// give the thread some time to respond, but kill it if it's obviously dead
-	timeout := time.NewTimer(c.WriteTimeout)
+// Read implements io.Reader.  If type information is needed, you can use ReadMessage.
+// Both methods consume the same stream and should probably not be used together.
+// WARNING: Read should only be used by wshandler.Handler that does not expose OnMessage
+// Read will block indefinitely by default if wshandler.Server is implemented
+func (c *Conn) Read(p []byte) (int, error) {
+	msg := <-c.inbox
+	if msg == nil {
+		// channel was closed
+		return 0, io.EOF
+	}
+	r := bytes.NewReader(msg.content)
+	return r.Read(p)
+}
+
+// ReadMessage is an alternative to Read and Server.OnMessage that provides websocket messagetype information.
+// Blocks until message is available for reading.
+func (c *Conn) ReadMessage(p []byte) (bytesRead int, isBinary bool, err error) {
+	msg := <-c.inbox
+	r := bytes.NewReader(msg.content)
+	bytesRead, err = r.Read(p)
+	if err != nil {
+		return
+	}
+	isBinary = msg.isBinary
+	return
+}
+
+// Write sends a message over the underlying websocket connection.  Safe for concurrent use.
+// The message type will be equal to c.messageType which can be configured with c.SetMessageMode.
+// Implements io.ReadWriteCloser
+func (c *Conn) Write(m []byte) (int, error) {
+	respChan := make(chan *writeResponse, 1)
+	out := &message{m, c.messageMode == websocket.BinaryMessage, respChan}
 	select {
 	case c.outbox <- out:
-	case <-timeout.C:
+	case <-time.After(c.WriteTimeout):
+		return 0, ErrWriteTimeOut
+	}
+
+	select {
+	case resp := <-respChan:
+		return resp.n, resp.err
+	case <-time.After(c.WriteTimeout):
+		return 0, ErrWriteTimeOut
 	}
 }
 
 // Close causes the connection to close.  How about that?
-func (c *Conn) Close() {
-	timeout := time.NewTimer(30 * time.Second)
+func (c *Conn) Close() error {
+	// TODO - it would be nice to cancel pending writes and close the write channel here
+	// We are not set up for this right now, so just timeout and eventually pending writes will clear up
 	select {
 	case c.closeSignal <- true:
-	case <-timeout.C:
+	case <-time.After(10 * time.Second):
+		// avoid memory leak if this channel is no longer being consumed
+		return errors.New("close timed out")
 	}
+
+	return nil
 }
 
-// Message contains the binary message to be sent and whether it should be interpreted as binary rather than text
+// SetMessageMode configures the types of messages that Conn will send with Write.  This has no bearning on
+// messages gotten from Read.  Valid values for m are wshandler.ModeBinary or wshandler.ModeText
+func (c *Conn) SetMessageMode(m int) {
+	if m != ModeBinary && m != ModeText {
+		log.Println("[WSHANDLER] \t WARNING: Illegal message mode.  Please use wshandler.ModeBinary or " +
+			"wshandler.ModeText")
+		return
+	}
+	c.messageMode = m
+}
+
 type message struct {
 	content  []byte
 	isBinary bool
+
+	resp chan *writeResponse
+}
+
+type writeResponse struct {
+	n   int
+	err error
 }

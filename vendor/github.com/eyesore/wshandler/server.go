@@ -2,22 +2,22 @@ package wshandler
 
 import "net/http"
 
-// Server responds to Websocket connection events
-type Server interface {
+// Handler handles Websocket connections by calling back on Connect, Open, and Close
+type Handler interface {
 	// Conn and SetConn allow us to expose the underlying connection
-	// This is needed for wrting especially, and allows us to expose some other methods like Close
+	// This is needed for writing especially, and allows us to expose some other methods like Close
 	Conn() *Conn
 	SetConn(*Conn)
-
 	OnConnect(*http.Request) error
-
 	OnOpen() error
-	// OnMessage will receive: payload, isBinary
-	OnMessage([]byte, bool) error
-
-	// OnClose will receive: wasClean, code, reason
-	OnClose(bool, int, error) error
+	OnClose(wasClean bool, code int, reason error) error
 }
 
-// ServerFactory creates a server
-type ServerFactory func() (Server, error)
+// Server serves Websocket connections by calling back on Connect, Open, Message, and Close
+type Server interface {
+	Handler
+	OnMessage(payload []byte, isBinary bool) error
+}
+
+// Factory creates a server
+type Factory func() (Handler, error)

@@ -9,6 +9,7 @@ import (
 
 var (
 	// debug can be set to true to enable verbose http errors
+	// TODO add debug logger
 	debug = false
 )
 
@@ -17,27 +18,27 @@ func SetDebug(on bool) {
 	debug = on
 }
 
-func onConnect(s Server, r *http.Request) error {
-	return s.OnConnect(r)
+func onConnect(h Handler, r *http.Request) error {
+	return h.OnConnect(r)
 }
 
-func onOpen(s Server) error {
-	c := s.Conn()
+func onOpen(h Handler) error {
+	c := h.Conn()
 	c.Conn.SetReadLimit(c.MaxMessageSize)
 	c.Conn.SetReadDeadline(time.Now().Add(c.PongTimeout))
 
-	// PongHandler may be modified by s.OnOpen - this is the default
+	// PongHandler may be modified by h.OnOpen - this is the default
 	c.Conn.SetPongHandler(func(string) error {
 		c.Conn.SetReadDeadline(time.Now().Add(c.PongTimeout))
 		return nil
 	})
 
-	err := s.OnOpen()
+	err := h.OnOpen()
 	if err != nil {
 		return err
 	}
-	go startReading(s)
-	go startWriting(s)
+	go startReading(h)
+	go startWriting(h)
 	return nil
 }
 
@@ -45,15 +46,17 @@ func onMessage(s Server, payload []byte, isBinary bool) error {
 	return s.OnMessage(payload, isBinary)
 }
 
-func onClose(s Server, wasClean bool, code int, reason error) error {
-	return s.OnClose(wasClean, code, reason)
+func onClose(h Handler, wasClean bool, code int, reason error) error {
+	return h.OnClose(wasClean, code, reason)
 }
 
-func startReading(s Server) {
-	c := s.Conn()
+func startReading(h Handler) {
+	c := h.Conn()
+	defer close(c.inbox)
 	// var reason error
 	// code := websocket.CloseNormalClosure
 	// wasClean := true
+	s, isServer := h.(Server)
 	for {
 		mtype, m, err := c.Conn.ReadMessage()
 		if err != nil {
@@ -62,12 +65,17 @@ func startReading(s Server) {
 			// code = websocket.CloseGoingAway
 			break
 		}
-		err = onMessage(s, m, mtype == websocket.BinaryMessage)
-		if err != nil {
-			// wasClean = false
-			// reason = err
-			// code = websocket.CloseInternalServerErr
-			break
+		isBinary := mtype == websocket.BinaryMessage
+		if !isServer {
+			c.inbox <- &message{m, isBinary, nil}
+		} else {
+			err = onMessage(s, m, isBinary)
+			if err != nil {
+				// wasClean = false
+				// reason = err
+				// code = websocket.CloseInternalServerErr
+				break
+			}
 		}
 	}
 	// // onClose(s, wasClean, code, reason)
@@ -80,8 +88,8 @@ func startReading(s Server) {
 	}
 }
 
-func startWriting(s Server) {
-	c := s.Conn()
+func startWriting(h Handler) {
+	c := h.Conn()
 	// TODO learn about close codes
 	var reason error
 	code := websocket.CloseNormalClosure
@@ -91,7 +99,7 @@ func startWriting(s Server) {
 		ticker.Stop()
 		c.Conn.Close()
 		// avoids race conditions with onclose - not ideal!
-		onClose(s, wasClean, code, reason)
+		onClose(h, wasClean, code, reason)
 	}()
 	for {
 		select {
@@ -103,16 +111,30 @@ func startWriting(s Server) {
 				messageType = websocket.TextMessage
 			}
 			c.Conn.SetWriteDeadline(time.Now().Add(c.WriteTimeout))
-			err := c.Conn.WriteMessage(messageType, out.content)
+			w, err := c.Conn.NextWriter(messageType)
 			if err != nil {
+				out.resp <- &writeResponse{0, err}
 				wasClean = false
 				reason = err
 				// don't know if this is the right code
 				code = websocket.CloseGoingAway
 				return
 			}
+			written, err := w.Write(out.content)
+			if err != nil {
+				out.resp <- &writeResponse{written, err}
+				wasClean = false
+				reason = err
+				// don't know if this is the right code
+				code = websocket.CloseGoingAway
+				return
+			}
+			select {
+			case out.resp <- &writeResponse{written, w.Close()}:
+			case <-time.After(c.WriteTimeout):
+			}
 		case <-ticker.C:
-			err := c.Conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(c.WriteTimeout))
+			err := c.Conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(c.WriteTimeout))
 			if err != nil {
 				wasClean = false
 				reason = err
@@ -136,7 +158,7 @@ func startWriting(s Server) {
 type Connector struct {
 	// Set options on Upgrader to configure
 	Upgrader *websocket.Upgrader
-	f        ServerFactory
+	f        Factory
 
 	// default options will be passed on to each Server yielded by this Connector
 	// PingInterval is how often we send a ping frame to make sure someone is still listening
@@ -147,10 +169,16 @@ type Connector struct {
 
 	MaxMessageSize int64
 	WriteTimeout   time.Duration
+
+	// ReadBufferSize determines the buffer size of the inbox channel
+	// The purpose of the read buffer is to detect instances that are not consuming the
+	// read buffer if used. Increase this if the buffer is filling faster than you can
+	// consume it.
+	ReadBufferSize int
 }
 
 // NewConnector returns a usable and configurable Connector
-func NewConnector(f ServerFactory) *Connector {
+func NewConnector(f Factory) *Connector {
 	ctr := &Connector{
 		Upgrader: &websocket.Upgrader{
 			HandshakeTimeout: 30 * time.Second,
@@ -160,8 +188,9 @@ func NewConnector(f ServerFactory) *Connector {
 		// default options
 		PingInterval:   30 * time.Second,
 		PongTimeout:    60 * time.Second,
-		MaxMessageSize: 2048,
+		MaxMessageSize: 4096,
 		WriteTimeout:   15 * time.Second,
+		ReadBufferSize: 100,
 	}
 
 	return ctr
@@ -183,7 +212,7 @@ func (ctr *Connector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		http.Error(w, errorText, http.StatusInternalServerError)
 	}
-	s, err := ctr.f()
+	h, err := ctr.f()
 	c := &Conn{
 		PingInterval:   ctr.PingInterval,
 		PongTimeout:    ctr.PongTimeout,
@@ -192,11 +221,12 @@ func (ctr *Connector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		ResponseHeader: http.Header{},
 
-		outbox:      make(chan message),
+		outbox:      make(chan *message),
+		inbox:       make(chan *message, ctr.ReadBufferSize),
 		closeSignal: make(chan bool),
 	}
-	s.SetConn(c)
-	err = onConnect(s, r)
+	h.SetConn(c)
+	err = onConnect(h, r)
 	if err != nil {
 		onError(err)
 		return
@@ -204,10 +234,10 @@ func (ctr *Connector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	wsconn, err := ctr.Upgrader.Upgrade(w, r, c.ResponseHeader)
 	if err != nil {
-		// error is written by Upgrader
+		// http error is written by Upgrader
 		return
 	}
 	c.Conn = wsconn
 
-	onOpen(s)
+	onOpen(h)
 }

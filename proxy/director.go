@@ -1,18 +1,17 @@
 package proxy
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 	"time"
 
 	"github.com/trey-jones/xmrwasp/config"
-
-	"go.uber.org/zap"
 )
 
 var (
-	directorInstance *Director
-	oneTimeDirector  = sync.Once{}
+	directorInstance      *Director
+	directorInstantiation = sync.Once{}
 )
 
 // Director might be refactored to "ProxyGroup"
@@ -23,13 +22,14 @@ type Director struct {
 
 	currentProxyID uint64
 	proxies        map[uint64]*Proxy
+	newProxyMu     sync.Mutex
 
 	// stat tracking only
 	lastTotalShares uint64
 }
 
 func GetDirector() *Director {
-	oneTimeDirector.Do(func() {
+	directorInstantiation.Do(func() {
 		directorInstance = newDirector()
 	})
 
@@ -40,8 +40,6 @@ func newDirector() *Director {
 	d := &Director{
 		statInterval: time.Duration(config.Get().StatInterval) * time.Second,
 
-		// buffer to 1 so connections don't finish OnOpen before the proxy is ready
-		workers: make(chan Worker, 1),
 		proxies: make(map[uint64]*Proxy),
 	}
 	go d.run()
@@ -49,42 +47,75 @@ func newDirector() *Director {
 	return d
 }
 
-// Assign feeds a worker into the pipeline
-func (d *Director) Assign(w Worker) {
-	d.workers <- w
+// Stats is a struct containing information about server uptime and activity, generated on demand
+type Stats struct {
+	Timestamp time.Time
+
+	Alive     time.Duration
+	Proxies   int
+	Workers   int
+	Shares    uint64
+	NewShares uint64
+
+	debug map[string]interface{}
 }
 
-func (d *Director) Use(w Worker) {
-	var pr *Proxy
-	for _, p := range d.proxies {
-		if p.Ready() {
-			pr = p
-			break
-		}
-	}
-	if pr == nil {
-		pr = New(d.nextProxyID())
-		pr.director = d
-		d.proxies[pr.ID] = pr
-	}
+func (d *Director) addProxy() *Proxy {
+	p := New(d.nextProxyID())
+	p.director = d
+	d.proxies[p.ID] = p
 
-	pr.Add(w)
+	return p
 }
 
 func (d *Director) run() {
 	statPrinter := time.NewTicker(d.statInterval)
 	defer statPrinter.Stop()
 	for {
-		select {
-		case w := <-d.workers:
-			d.Use(w)
-		case <-statPrinter.C:
-			d.printStats()
-		}
+		<-statPrinter.C
+		d.printStats()
 	}
 }
 
 func (d *Director) printStats() {
+	stats := d.GetStats()
+
+	fmt.Printf("Alive for %s \t|\t %v proxies \t|\t %v workers \t|\t %v shares (+%v)\n",
+		stats.Alive, stats.Proxies, stats.Workers, stats.Shares, stats.NewShares)
+}
+
+func (d *Director) removeProxy(pr *Proxy) {
+	delete(d.proxies, pr.ID)
+}
+
+func (d *Director) nextProxyID() uint64 {
+	d.currentProxyID++
+	return d.currentProxyID
+}
+
+// NextProxy gets the first available proxy that has room.
+// If no proxy is available, a new one is created.
+func (d *Director) NextProxy() *Proxy {
+	// This takes care of the race, but might bottleneck - TODO revisit this later.
+	// consider storing nextproxy until full/notready then getting a new one?  still a race...
+	d.newProxyMu.Lock()
+	defer d.newProxyMu.Unlock()
+	var pr *Proxy
+	for _, p := range d.proxies {
+		if p.isReady() {
+			pr = p
+			break
+		}
+	}
+	if pr == nil {
+		// avoid locking in most cases by looping once first
+		pr = d.addProxy()
+	}
+
+	return pr
+}
+
+func (d *Director) GetStats() *Stats {
 	totalProxies := 0
 	totalWorkers := 0
 	proxyIDs := make([]int, 0)
@@ -104,17 +135,18 @@ func (d *Director) printStats() {
 		oldestProxy := d.proxies[uint64(oldestProxyID)]
 		aliveSince = oldestProxy.aliveSince
 	}
-	duration := time.Now().Sub(aliveSince)
+	duration := time.Now().Sub(aliveSince).Truncate(1 * time.Second)
 
-	zap.S().Infof("Alive for %s \t|\t %v proxies \t|\t %v workers \t|\t %v shares (+%v)",
-		duration, totalProxies, totalWorkers, totalSharesSubmitted, recentShares)
-}
+	stats := &Stats{
+		Timestamp: time.Now(),
+		Alive:     duration,
+		Proxies:   totalProxies,
+		Workers:   totalWorkers,
+		Shares:    totalSharesSubmitted,
+		NewShares: recentShares,
+	}
 
-func (d *Director) removeProxy(pr *Proxy) {
-	delete(d.proxies, pr.ID)
-}
+	// if debug, populate debug
 
-func (d *Director) nextProxyID() uint64 {
-	d.currentProxyID++
-	return d.currentProxyID
+	return stats
 }
