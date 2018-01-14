@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"reflect"
 	"strconv"
@@ -12,8 +13,6 @@ import (
 
 	"github.com/kelseyhightower/envconfig"
 	"github.com/pkg/errors"
-
-	"go.uber.org/zap"
 )
 
 var (
@@ -44,11 +43,11 @@ type Config struct {
 
 	StatInterval int `envconfig:"stats" default:"60" json:"stats"`
 
-	DonateLevel int `envconfig:"donate" default:"3" json:"donate"`
+	DonateLevel int  `envconfig:"donate" default:"3" json:"donate"`
+	Background  bool `envconfig:"background" json:"background"`
 
 	// not yet implemented
-	Background bool
-	LogFile    string
+	LogFile string
 }
 
 // This only needs to be run if read from JSON
@@ -70,7 +69,7 @@ func validateAndSetDefaults(c *Config) error {
 			case reflect.Int:
 				intVal, err := strconv.Atoi(defaultValue)
 				if err != nil {
-					zap.S().Error("Unable to convert default value to int: ", defaultValue)
+					log.Fatal("Unable to convert default value to int: ", defaultValue)
 				}
 				if field.Int() == 0 && field.CanSet() {
 					field.SetInt(int64(intVal))
@@ -84,11 +83,11 @@ func validateAndSetDefaults(c *Config) error {
 					field.SetBool(v)
 				}
 			default:
-				zap.S().Error("Unexpected type found in config.  Skipping: ", field)
+				log.Println("Unexpected type found in config.  Skipping: ", field)
 			}
 		}
 		if _, ok := refType.Elem().Field(i).Tag.Lookup("required"); ok && field.String() == "" {
-			zap.S().Error("Missing required field in config: ", refType.Elem().Field(i).Name)
+			log.Fatal("Missing required field in config: ", refType.Elem().Field(i).Name)
 			return ErrMissingRequiredConfig
 		}
 	}
@@ -138,6 +137,7 @@ func Get() *Config {
 			var f io.Reader
 			f, err = os.Open(File)
 			if err != nil {
+				log.Fatal("open config file failed: ", err)
 				return
 			}
 			err = configFromFile(f)
@@ -147,7 +147,7 @@ func Get() *Config {
 		}
 	})
 	if err != nil {
-		zap.S().Fatal("Unable to load config: ", err)
+		log.Fatal("Unable to load config: ", err)
 	}
 	return instance
 }

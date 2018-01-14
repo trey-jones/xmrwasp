@@ -24,6 +24,9 @@ func usage() {
 
 func setOptions() {
 	configFile = flag.String("c", "", "JSON file from which to read configuration values")
+	flag.Parse()
+
+	config.File = *configFile
 }
 
 func setupLogger() {
@@ -38,8 +41,8 @@ func setupLogger() {
 
 func main() {
 	// TODO define logging interface
-	setupLogger()
 	setOptions()
+	setupLogger()
 
 	flag.Usage = usage
 

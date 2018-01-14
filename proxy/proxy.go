@@ -217,12 +217,11 @@ func (p *Proxy) run() {
 
 		// these are based on known regular intervals
 		case <-donateStart.C:
-			zap.S().Debug("Switching to donation server")
+			// zap.S().Debug("Switching to donation server")
 			p.donate()
 			donateEnd.Reset(p.donateLength)
-			// donateEnd.Reset(2 * time.Minute)
 		case <-donateEnd.C:
-			zap.S().Debug("Finished donation cycle. Cleaning up.")
+			// zap.S().Debug("Finished donation cycle. Cleaning up.")
 			p.undonate()
 			donateStart.Reset(p.donateInterval)
 		case <-keepalive.C:
@@ -244,7 +243,6 @@ func (p *Proxy) donate() {
 	zap.S().Debug("Dialing out to: ", p.donateAddr)
 	dc, err := stratum.Dial("tcp", p.donateAddr)
 	if err != nil {
-		// this makes it too easy to avoid donate, do a retry or something?
 		zap.S().Error("Failed to connect to donate server")
 		return
 	}
@@ -256,7 +254,7 @@ func (p *Proxy) donate() {
 		err = reply.Error
 	}
 	if err != nil {
-		// again, retry or something
+		// retry or something
 		zap.S().Error("Failed to login to donate server")
 		return
 	}
@@ -270,7 +268,6 @@ func (p *Proxy) donate() {
 	err = p.handleDonateJob(reply.Job)
 	if err != nil {
 		zap.S().Error("Error handling new job from donation server.")
-		// try get job?
 		return
 	}
 	zap.S().Debug("Starting donation loop")
@@ -282,7 +279,7 @@ func (p *Proxy) undonate() {
 	p.jobMu.Unlock()
 	// give client 30 seconds, then DC
 	time.AfterFunc(donateShutdownDelay, func() {
-		zap.S().Debug("Shutting down donation conn")
+		// zap.S().Debug("Shutting down donation conn")
 		p.DC.Close()
 	})
 	p.handleJob(p.currentJob)
@@ -379,6 +376,7 @@ func (p *Proxy) login() {
 	if err != nil {
 		zap.S().Fatal("Unable to login to pool server: ", err)
 	}
+	zap.S().Debug("Successfully logged into pool.")
 	p.authID = reply.ID
 	err = p.handleJob(reply.Job)
 	if err != nil {
@@ -434,8 +432,8 @@ func (p *Proxy) configureDonations() {
 	}
 	p.donateLength = (time.Duration(math.Floor(float64(donateCycle)*(float64(donateLevel)/100))) * time.Second)
 	p.donateInterval = (donateCycle * time.Second) - p.donateLength
-	zap.S().Debug("DonateLength is: ", p.donateLength)
-	zap.S().Debug("DonateInterval is: ", p.donateInterval)
+	// zap.S().Debug("DonateLength is: ", p.donateLength)
+	// zap.S().Debug("DonateInterval is: ", p.donateInterval)
 }
 
 func (p *Proxy) shutdown() {

@@ -27,7 +27,7 @@ var (
 	null = json.RawMessage([]byte("null"))
 
 	// CallTimeout is the amount of time we wait for a response before we return an error
-	CallTimeout = 60 * time.Second
+	CallTimeout = 30 * time.Second
 
 	// ErrCallTimedOut means that call did not succeed within CallTimeout
 	ErrCallTimedOut = errors.New("rpc call timeout")
@@ -75,6 +75,10 @@ type clientRequest struct {
 type Notification clientRequest
 
 func (c *clientCodec) WriteRequest(r *rpc.Request, param interface{}) error {
+	if r.Seq == 0 {
+		// seems many stratum pools don't like seq = 0
+		return errors.New("skipping first request")
+	}
 	// If return error: it will be returned as is for this call.
 	// Allow param to be only Array, Slice, Map or Struct.
 	// When param is nil or uninitialized Map or Slice - omit "params".
@@ -317,6 +321,8 @@ func (c *Client) Notifications() chan Notification {
 func NewClient(conn io.ReadWriteCloser) *Client {
 	codec := newClientCodec(conn)
 	client := rpc.NewClientWithCodec(codec)
+	// this is hack around
+	_ = client.Go("incrementMySequence", nil, nil, nil)
 	return &Client{client, codec}
 }
 

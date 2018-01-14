@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TODO test choose env or file
+
 func reset() {
 	os.Clearenv()
 	oneTimeConfig = sync.Once{}
