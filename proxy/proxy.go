@@ -226,7 +226,7 @@ func (p *Proxy) run() {
 			donateStart.Reset(p.donateInterval)
 		case <-keepalive.C:
 			reply := StatusReply{}
-			err := p.SC.Call("keepalived", make(map[string]interface{}), &reply)
+			err := p.SC.Call("keepalived", map[string]string{"id": p.authID}, &reply)
 			if reply.Error != nil {
 				err = reply.Error
 			}
