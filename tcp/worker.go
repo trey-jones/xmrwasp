@@ -7,8 +7,8 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/trey-jones/stratum"
 	"github.com/trey-jones/xmrwasp/proxy"
-	"github.com/trey-jones/xmrwasp/stratum"
 )
 
 const (
@@ -16,7 +16,7 @@ const (
 	jobSendTimeout = 30 * time.Second
 )
 
-// worker does the work (of mining, well more like accounting) and implements the wshandler.Server interface
+// worker does the work (of mining, well more like accounting)
 type Worker struct {
 	conn net.Conn
 	id   uint64

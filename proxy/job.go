@@ -10,6 +10,7 @@ const (
 	nonceLength = 4 // bytes
 )
 
+// Job is a mining job.  Break it up and send chunks to workers.
 type Job struct {
 	Blob            string   `json:"blob"`
 	ID              string   `json:"job_id"`
@@ -17,6 +18,7 @@ type Job struct {
 	SubmittedNonces []string `json:"-"`
 }
 
+// NewJobFromServer uses prepares a Job from json data from the pool
 func NewJobFromServer(job map[string]interface{}) *Job {
 	j := &Job{}
 	j.Blob, _ = job["blob"].(string)
@@ -26,6 +28,7 @@ func NewJobFromServer(job map[string]interface{}) *Job {
 	return j
 }
 
+// NewJob builds a job for distribution to a worker
 func NewJob(blobBytes []byte, nonce uint32, id, target string) *Job {
 	j := &Job{
 		ID:              id,
@@ -40,6 +43,7 @@ func NewJob(blobBytes []byte, nonce uint32, id, target string) *Job {
 	return j
 }
 
+// Nonce extracts the nonce from the job blob and returns it.
 func (j *Job) Nonce() (nonce uint32, blobBytes []byte, err error) {
 	blobBytes, err = hex.DecodeString(j.Blob)
 	if err != nil {

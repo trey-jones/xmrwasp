@@ -7,9 +7,9 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/eyesore/wshandler"
+	"github.com/eyesore/ws"
+	"github.com/trey-jones/stratum"
 	"github.com/trey-jones/xmrwasp/proxy"
-	"github.com/trey-jones/xmrwasp/stratum"
 )
 
 const (
@@ -17,9 +17,9 @@ const (
 	jobSendTimeout = 30 * time.Second
 )
 
-// worker does the work (of mining, well more like accounting) and implements the wshandler.Server interface
+// worker does the work (of mining, well more like accounting) and implements the ws.Server interface
 type Worker struct {
-	wsConn *wshandler.Conn
+	wsConn *ws.Conn
 	id     uint64
 	p      *proxy.Proxy
 
@@ -30,8 +30,8 @@ type Worker struct {
 	jobs chan *proxy.Job
 }
 
-// NewWorker is a wshandler.Factory
-func NewWorker() (wshandler.Handler, error) {
+// NewWorker is a ws.Factory
+func NewWorker() (ws.Connector, error) {
 	w := &Worker{
 		jobs: make(chan *proxy.Job),
 	}
@@ -39,11 +39,11 @@ func NewWorker() (wshandler.Handler, error) {
 	return w, nil
 }
 
-func (w *Worker) Conn() *wshandler.Conn {
+func (w *Worker) Conn() *ws.Conn {
 	return w.wsConn
 }
 
-func (w *Worker) SetConn(c *wshandler.Conn) {
+func (w *Worker) SetConn(c *ws.Conn) {
 	w.wsConn = c
 }
 

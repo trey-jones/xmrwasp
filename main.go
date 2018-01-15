@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/eyesore/wshandler"
+	ews "github.com/eyesore/ws"
 	"github.com/trey-jones/xmrwasp/config"
 	"github.com/trey-jones/xmrwasp/tcp"
 	"github.com/trey-jones/xmrwasp/ws"
@@ -20,21 +20,19 @@ var (
 )
 
 func printWelcomeMessage() {
-	// print
-	// Program name and version
-	// servers listening and ports
-	// stat interval
-	fmt.Printf("**** XMR Web and Stratum Proxy \t\t v%s ****\n", version)
+	fmt.Println("************************************************************************")
+	fmt.Printf("*    XMR Web and Stratum Proxy \t\t\t\t v%s \n", version)
 	if !config.Get().DisableWebsocket {
 		port := config.Get().WebsocketPort
-		fmt.Printf("*    Accepting Websocket Connections on port: \t\t %s", port)
+		fmt.Printf("*    Accepting Websocket Connections on port: \t\t %s\n", port)
 	}
 	if !config.Get().DisableTCP {
 		port := config.Get().StratumPort
-		fmt.Printf("*    Accepting TCP Connections on port: \t\t %s", port)
+		fmt.Printf("*    Accepting TCP Connections on port: \t\t\t\t %s\n", port)
 	}
 	statInterval := config.Get().StatInterval
-	fmt.Printf("*    Printing stats every: \t\t %v seconds\n", statInterval)
+	fmt.Printf("*    Printing stats every: \t\t\t\t %v seconds\n", statInterval)
+	fmt.Println("************************************************************************")
 }
 
 func usage() {
@@ -73,7 +71,7 @@ func main() {
 	}
 	config.File = *configFile
 
-	wshandler.SetDebug(false)
+	ews.SetDebug(false)
 	holdOpen := make(chan bool, 1)
 
 	if !config.Get().DisableWebsocket {

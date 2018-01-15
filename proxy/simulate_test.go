@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eyesore/wshandler"
+	ews "github.com/eyesore/ws"
 	"github.com/gorilla/websocket"
-	"github.com/posener/wstest"
-	"github.com/trey-jones/xmrwasp/stratum"
+	"github.com/trey-jones/stratum"
+	"github.com/trey-jones/wstest"
 	"github.com/trey-jones/xmrwasp/tcp"
 	"github.com/trey-jones/xmrwasp/ws"
 	"go.uber.org/zap"
@@ -92,7 +92,7 @@ type wsClient struct {
 func newWsClient(t *testing.T) error {
 	// using the test server throws "Too many open files" on mac - wstest seems to work ok and spins up workers faster
 	// url := strings.Replace(testWsServer.URL, "http", "ws", 1)
-	h := wshandler.NewConnector(ws.NewWorker)
+	h := ews.NewHandler(ws.NewWorker)
 	d := wstest.NewDialer(h, nil)
 	// conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	conn, resp, err := d.Dial("ws://notarealserver", nil)
@@ -334,7 +334,7 @@ func startDonatePool(t *testing.T) {
 }
 
 func startMockWebserver(t *testing.T) {
-	h := wshandler.NewConnector(ws.NewWorker)
+	h := ews.NewHandler(ws.NewWorker)
 	testWsServer = httptest.NewServer(h)
 }
 
@@ -370,7 +370,7 @@ func setEnv() {
 
 func configure() {
 	// right now workers means "workers of each type, not simulaneous"
-	flag.IntVar(&maxWorkers, "workers", 250, "max total number of workers of each type to spawn during the simulation")
+	flag.IntVar(&maxWorkers, "workers", 1000, "max total number of workers of each type to spawn during the simulation")
 	// TO increase beyond 10, timeout flag must also be present and greater than duration
 	flag.IntVar(&simDuration, "duration", 9, "number of minutes to run the simulation")
 	flag.StringVar(&simMode, "mode", "all", "which sims to run. valid values: ws, tcp, all")

@@ -80,7 +80,7 @@ func (d *Director) run() {
 func (d *Director) printStats() {
 	stats := d.GetStats()
 
-	fmt.Printf("Alive for %s \t|\t %v proxies \t|\t %v workers \t|\t %v shares (+%v)\n",
+	fmt.Printf("Alive for %s \t\t\t %v proxies \t\t %v workers \t\t %v shares(+%v)\n",
 		stats.Alive, stats.Proxies, stats.Workers, stats.Shares, stats.NewShares)
 }
 

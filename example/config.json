@@ -1,6 +1,9 @@
 {
-    "login": "47sfBPDL9qbDuF5stdrE8C6gVQXf15SeTN4BNxBZ3Ahs6LTayo2Kia2YES7MeN5FU7MKUrWAYPhmeFUYQ3v4JBAvKSPjigi+worker_example",
+    "wsport": "8080",
+
+    "login": "47sfBPDL9qbDuF5stdrE8C6gVQXf15SeTN4BNxBZ3Ahs6LTayo2Kia2YES7MeN5FU7MKUrWAYPhmeFUYQ3v4JBAvKSPjigi+example_config",
     "password": "x",
     "url": "xmrpool.eu:7777",
+
     "debug": true
 }

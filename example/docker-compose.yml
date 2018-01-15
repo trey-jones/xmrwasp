@@ -7,7 +7,8 @@ services:
       ports: "8085:8085"
       environment:
         XMRWASP_WSPORT: 8085
-        XMRWASP_LOGIN: 47sfBPDL9qbDuF5stdrE8C6gVQXf15SeTN4BNxBZ3Ahs6LTayo2Kia2YES7MeN5FU7MKUrWAYPhmeFUYQ3v4JBAvKSPjigi
+        XMRWASP_URL: xmrpool.eu:7777
+        XMRWASP_LOGIN: 47sfBPDL9qbDuF5stdrE8C6gVQXf15SeTN4BNxBZ3Ahs6LTayo2Kia2YES7MeN5FU7MKUrWAYPhmeFUYQ3v4JBAvKSPjigi+docker
         XMRWASP_PASSWORD: x
 
     httpd:

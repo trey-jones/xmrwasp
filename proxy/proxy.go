@@ -2,25 +2,29 @@ package proxy
 
 import (
 	"errors"
+	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
 	"go.uber.org/zap"
 
+	"github.com/trey-jones/stratum"
 	"github.com/trey-jones/xmrwasp/config"
-	"github.com/trey-jones/xmrwasp/stratum"
 )
 
 const (
 	// MaxUint protects IDs from overflow if the process runs for thousands of years
 	MaxUint = ^uint64(0)
 
-	// TODO - worker could compute expected hashes
+	// TODO - worker could supply expected hashes?
 	expectedHashes = 0x7a120 // 500k, not really expected, just plenty of work
 
 	// TODO adjust - lower means more connections to pool, potentially fewer stales if that is a problem
 	maxProxyWorkers = 1024
+
+	retryDelay = 10 * time.Second
 
 	donateCycle time.Duration = 3600 // seconds
 	// amount of time to keep the donate connection open after donation ends
@@ -187,23 +191,38 @@ func (p *Proxy) nextWorkerID() uint64 {
 }
 
 func (p *Proxy) run() {
-	p.login()
+	for {
+		err := p.login()
+		if err == nil {
+			break
+		}
+		fmt.Printf("Failed to acquire pool connection.  Retrying in %s.", retryDelay)
+		// TODO allow fallback pools here
+		<-time.After(retryDelay)
+	}
 	// login blocks until first job is received
 	keepalive := time.NewTicker(keepAliveInterval)
 	donateStart := time.NewTimer(p.donateInterval)
 	donateEnd := time.NewTimer(p.donateLength)
 	donateEnd.Stop() // will be reset after first donate period starts
-	defer keepalive.Stop()
-	defer p.shutdown()
+	defer func() {
+		keepalive.Stop()
+		p.shutdown()
+	}()
+
 	for {
 		select {
 		// these are from workers
 		case s := <-p.submissions:
 			// zap.S().Debug("Submitting share to primary pool: ", s.JobID)
-			p.handleSubmit(s, p.SC)
+			err := p.handleSubmit(s, p.SC)
+			if err != nil && strings.Contains(strings.ToLower(err.Error()), "banned") {
+				zap.S().Error("Banned IP - killing proxy: ", p.ID)
+				return
+			}
 		case s := <-p.donations:
 			// zap.S().Debug("Submitting share to donate server: ", s.JobID)
-			p.handleSubmit(s, p.DC)
+			p.handleSubmit(s, p.DC) // donate server will handle it's own errors
 		case w := <-p.addWorker:
 			p.receiveWorker(w)
 		case w := <-p.delWorker:
@@ -240,7 +259,7 @@ func (p *Proxy) run() {
 }
 
 func (p *Proxy) donate() {
-	zap.S().Debug("Dialing out to: ", p.donateAddr)
+	// zap.S().Debug("Dialing out to: ", p.donateAddr)
 	dc, err := stratum.Dial("tcp", p.donateAddr)
 	if err != nil {
 		zap.S().Error("Failed to connect to donate server")
@@ -270,7 +289,6 @@ func (p *Proxy) donate() {
 		zap.S().Error("Error handling new job from donation server.")
 		return
 	}
-	zap.S().Debug("Starting donation loop")
 }
 
 func (p *Proxy) undonate() {
@@ -357,11 +375,10 @@ func (p *Proxy) handleNotification(notif stratum.Notification, donate bool) {
 	}
 }
 
-func (p *Proxy) login() {
+func (p *Proxy) login() error {
 	sc, err := stratum.Dial("tcp", config.Get().PoolAddr)
 	if err != nil {
-		// TODO fallback, retry, anything!
-		zap.S().Fatal("Unable to connect to remote server", err)
+		return err
 	}
 	zap.S().Debug("Client made pool connection.")
 	p.SC = sc
@@ -374,7 +391,7 @@ func (p *Proxy) login() {
 	reply := LoginReply{}
 	err = p.SC.Call("login", params, &reply)
 	if err != nil {
-		zap.S().Fatal("Unable to login to pool server: ", err)
+		return err
 	}
 	zap.S().Debug("Successfully logged into pool.")
 	p.authID = reply.ID
@@ -384,8 +401,14 @@ func (p *Proxy) login() {
 		// continue and just wait for the next job?
 		// this shouldn't happen
 	}
+
+	fmt.Println("*    Connected and logged in to pool server.    \t*")
+	fmt.Println("*    Broadcasting jobs to workers.    \t\t\t*")
+
 	// now we have a job, so release jobs
 	p.jobWaiter.Done()
+
+	return nil
 }
 
 func (p *Proxy) validateShare(s *share) error {
@@ -438,6 +461,7 @@ func (p *Proxy) configureDonations() {
 
 func (p *Proxy) shutdown() {
 	// kill worker connections - they should connect to a new proxy if active
+	// TODO - detect ban and wait before retrying?
 	p.ready = false
 	for _, w := range p.workers {
 		w.Disconnect()
@@ -450,18 +474,19 @@ func (p *Proxy) isReady() bool {
 	return p.ready && p.workerCount < maxProxyWorkers
 }
 
-func (p *Proxy) handleSubmit(s *share, c *stratum.Client) {
+func (p *Proxy) handleSubmit(s *share, c *stratum.Client) (err error) {
 	defer func() {
 		close(s.Response)
 		close(s.Error)
 	}()
 	if c == nil {
 		zap.S().Debug("Dropping share due to nil client for job: ", s.JobID)
-		s.Error <- errors.New("no client to handle share")
+		err = errors.New("no client to handle share")
+		s.Error <- err
 		return
 	}
 
-	if err := p.validateShare(s); err != nil {
+	if err = p.validateShare(s); err != nil {
 		zap.S().Debug("Rejecting share with: ", err)
 		s.Error <- err
 		return
@@ -469,8 +494,7 @@ func (p *Proxy) handleSubmit(s *share, c *stratum.Client) {
 
 	s.AuthID = p.authID
 	reply := StatusReply{}
-	if err := c.Call("submit", s, &reply); err != nil {
-		// if this happens, we probably need to disconnect and take a break
+	if err = c.Call("submit", s, &reply); err != nil {
 		s.Error <- err
 		return
 	}

@@ -3,13 +3,13 @@ package ws
 import (
 	"net/http"
 
-	"github.com/eyesore/wshandler"
+	"github.com/eyesore/ws"
 	"github.com/trey-jones/xmrwasp/config"
 	"go.uber.org/zap"
 )
 
 func StartServer(logger *zap.SugaredLogger) {
-	h := wshandler.NewConnector(NewWorker)
+	h := ws.NewHandler(NewWorker)
 	h.AllowAnyOrigin()
 
 	http.Handle("/", h)
