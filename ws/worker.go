@@ -5,8 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	"go.uber.org/zap"
-
 	"github.com/eyesore/ws"
 	"github.com/trey-jones/stratum"
 	"github.com/trey-jones/xmrwasp/proxy"
@@ -17,7 +15,7 @@ const (
 	jobSendTimeout = 30 * time.Second
 )
 
-// worker does the work (of mining, well more like accounting) and implements the ws.Server interface
+// Worker does the work (of mining, well more like accounting) and implements the ws.Server interface
 type Worker struct {
 	wsConn *ws.Conn
 	id     uint64
@@ -39,14 +37,17 @@ func NewWorker() (ws.Connector, error) {
 	return w, nil
 }
 
+// Conn implements ews.Connector
 func (w *Worker) Conn() *ws.Conn {
 	return w.wsConn
 }
 
+// SetConn implements ews.Connector
 func (w *Worker) SetConn(c *ws.Conn) {
 	w.wsConn = c
 }
 
+// OnConnect implements ews.Connector
 func (w *Worker) OnConnect(r *http.Request) error {
 	// if protocols := r.Header.Get("sec-websocket-protocol"); protocols != "" {
 	//     protocolList := strings.Split(protocols, ",")
@@ -55,6 +56,7 @@ func (w *Worker) OnConnect(r *http.Request) error {
 	return nil
 }
 
+// OnOpen implements ews.Connector
 func (w *Worker) OnOpen() error {
 	ctx := context.WithValue(context.Background(), "worker", w)
 	codec := stratum.NewCoinhiveServerCodecContext(ctx, w.Conn())
@@ -67,7 +69,9 @@ func (w *Worker) OnOpen() error {
 	return nil
 }
 
+// OnClose implements ews.Connector
 func (w *Worker) OnClose(wasClean bool, code int, reason error) error {
+	// zap.S().Debug("OnClose is called for worker")
 	w.p.Remove(w)
 
 	return nil
@@ -91,17 +95,19 @@ func (w *Worker) Proxy() *proxy.Proxy {
 }
 
 func (w *Worker) Disconnect() {
+	// zap.S().Debug("Disconnect is called for worker.")
 	w.Conn().Close()
 }
 
 func (w *Worker) NewJob(j *proxy.Job) {
 	err := w.codec.Notify("job", j)
 	if err != nil {
-		zap.S().Error("Error sending job to worker: ", err)
+		// zap.S().Debug("Error sending job to worker: ", err)
 		w.Disconnect()
 	}
 }
 
+// unused
 func (w *Worker) expectedHashes() uint32 {
 	// TODO - adjustable? does it matter? should it be higher?
 	// miners seem to introduce random data anyway...

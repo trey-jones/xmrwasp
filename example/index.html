@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <title>XMR WASP</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name='description' content='XMR WASP is a Monero mining proxy that accepts both TCP and websocket connections.'>
+    <meta name='keywords' content='monero,xmr,cryptocurrency,mining,proxy,browser,coinhive'>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+    <link rel="stylesheet" href='/css/fontawesome-all.css'>
+    <link rel="stylesheet" href="/css/cmGauge.css">
+    <link rel='stylesheet' href='/css/style.css'>
+</head>
+<body>
+<!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+    <div class="container">
+        <a class="navbar-brand" href='//github.com/trey-jones/xmrwasp' target="_blank" >
+            <i class="fab fa-monero"></i> XMR WASP
+        </a>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarResponsive"></div>
+    </div>
+</nav>
+
+<!-- Page Content -->
+<div class="container">
+    <div class="row">
+        <div class="col-12 text-center">
+            <h1 class="mt-5"><i class="fab fa-monero"></i> XMR WASP</h1>
+            <p class="lead">A websocket and stratum proxy for mining monero.</p>
+            <p><a href='//github.com/trey-jones/xmrwasp/releases' target="_blank">
+                Releases
+            </a></p>
+            <p><a href='//github.com/trey-jones/xmrwasp' target="_blank">
+                View the Project on Github
+            </a></p>
+        </div>
+    </div>
+
+    <div class='row spaceAfter'>
+        <div class='col-4 text-center'>
+            <p>Right now, this website is doing nothing.  The responsible way to mine monero on the web is to <strong>inform your users</strong> and <strong>allow them to opt-in or opt-out.</strong></p>
+        </div>
+        <div class="col-4 text-center">
+            <p><i class="fab fa-monero"></i> XMR WASP is not what you are looking at.  It is a proxy for monero miners.  <i class="fab fa-monero"></i> XMR WASP is handling any mining that occurs in browsers mining on  this site, as well as any donation traffic from users of the software by aggregating it and sending it to a mining pool.</p>
+        </div>
+        <div class="col-4 text-center">
+            <p>This website seeks to promote use this software and other easily abused cryptocurrency mining solutions in a responsible way, and to educate users about how browser miners work.</p>
+        </div>
+    </div>
+
+    <div class="row spaceAfter">
+        <div class='col-4'>Info over here</div>
+        <div class='col-4'>
+            <div id="speedometer" class="gauge gauge-big gauge-green">
+                <div class="gauge-arrow" data-percentage="0" style="transform: rotate(0deg);"></div>
+            </div>
+        </div>
+        <div class='col-4'>
+            <div class='row text-center'>
+                <h5 class='col-3'>Threads: </h5>
+                <a id='loseThread' class='col-1' href='#'>
+                    <i class="fas fa-minus-circle"></i>
+                </a>
+                <span class='col-2 text-center'>
+                    <strong id='numThreads'>1</strong>
+                </span>
+                <a id='addThread' class='col-1' href='#'>
+                    <i class="fas fa-plus-circle"></i>
+                </a>
+            </div>
+
+            <div class='row text-center'>
+                <h5 class='col-3'>Throttle: </h5>
+                <a id='loseThrottle' class='col-1' href='#'>
+                    <i class="fas fa-minus-circle"></i>
+                </a>
+                <span class='col-2 text-center'>
+                    <strong id='numThrottles'>50%</strong>
+                </span>
+                <a id='addThrottle' class='col-1' href='#'>
+                    <i class="fas fa-plus-circle"></i>
+                </a>
+            </div>
+            <div class='row text-center'>
+                <h5 class='col-3'>Hashrate: </h5>
+                <p class='col-3'>
+                    <span id='currentHashrate'>0</span>h/s
+                </p>
+            </div>
+            <div class='row text-center'>
+                <h5 class='col-3'>Hashes: </h5>
+                    <p class='col-3'>
+                        <span id='totalHashes'>0</span>
+                    </p>
+                </h5>
+            </div>
+        </div>
+    </div>
+
+    <div class='row'>
+        <div class='col-4 offset-5'>
+            <ul class='list-inline'>
+                <li class='list-inline-item'>
+                    <button class='btn btn-lg btn-outline-secondary startButton' id='startButton'>
+                        <i class="far fa-play-circle"></i> <span>Start</span>
+                    </button>
+                </li>
+                <!-- <li class='list-inline-item'>
+                    <button class='btn btn-lg btn-outline-secondary startButton' id='tenButton'>10x</button>
+                </li>
+                <li class='list-inline-item'>
+                    <button class='btn btn-lg btn-outline-secondary startButton' id='hundredButton'>100x</button>
+                </li> -->
+            </ul>
+        </div>
+    </div>
+</div>
+
+<script
+  src="https://code.jquery.com/jquery-3.2.1.min.js"
+  integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4="
+  crossorigin="anonymous"></script>
+<script src='/js/cmGauge.js'></script>
+<script src='/cryptonoter/processor.js'></script>
+<script>
+    (function($) {
+        $(document).ready(function() {
+            var maxThreads = 8,
+                minThreads = 1,
+                maxThrottle = 100,
+                minThrottle = 10,
+                throttleIncrement = 10,
+                uiUpdateInterval = 250, // ms
+                hashRateGuageMult = 1.7;
+
+            function startMiner() {
+                mining = true;
+                var $startButton = $('#startButton');
+                $startButton.find('span').text('Stop')
+                $startButton.find('i')
+                    .removeClass('fa-play-circle')
+                    .addClass('fa-stop-circle');
+                miner.start();
+                uiLoop = setInterval(updateUI, uiUpdateInterval);
+            }
+            function stopMiner() {
+                mining = false;
+
+                var $startButton = $('#startButton');
+                $startButton.find('span').text('Start')
+                $startButton.find('i')
+                    .removeClass('far fa-stop-circle')
+                    .addClass('fas fa-play-circle');
+
+                clearInterval(uiLoop);
+                miner.stop();
+                updateUI();
+            }
+            function updateUI() {
+                var currentHashRate = Math.floor(miner.getHashesPerSecond()),
+                    totalHashes = miner.getTotalHashes(),
+                    gaugeValue = currentHashRate * 2;
+
+                $('#speedometer .gauge-arrow').trigger('updateGauge', gaugeValue);
+                $('#currentHashrate').text(currentHashRate);
+                $('#totalHashes').text(totalHashes);
+            }
+            function toggleMiner() {
+                mining ? stopMiner() : startMiner();
+            }
+            function solveN(n) {
+
+            }
+            function setThreads(n) {
+                miner.setNumThreads(n);
+                $('#numThreads').text(n);
+            }
+            // invert from display value
+            // floating point makes this slightly innaccurate for some values
+            function setThrottle(n) {
+                $('#numThrottles').text(n + '%');
+                var throttleValue = 1 - (n / 100);
+
+                miner.setThrottle(throttleValue);
+            }
+
+            var miner = new CryptoNoter.Anonymous('', {
+                threads: 1,
+                throttle: 0.5
+            }),
+            throttleInt = 50, // try and avoid floating point display issues
+            mining = false,
+            uiLoop;
+
+            $('#speedometer .gauge-arrow').cmGauge();
+            $('#startButton').on('click', function(e) {
+                toggleMiner();
+            });
+            $('#addThread').on('click', function(e) {
+                e.preventDefault();
+                var currentThreads = miner.getNumThreads();
+                console.log(currentThreads);
+                if (currentThreads >= maxThreads) {
+                    return;
+                }
+                setThreads(++currentThreads);
+            });
+            $('#loseThread').on('click', function(e) {
+                e.preventDefault();
+                var currentThreads = miner.getNumThreads();
+                if(currentThreads <= minThreads) {
+                    return;
+                }
+                setThreads(--currentThreads);
+            });
+            // add throttle actually lowers the throttle value
+            $('#addThrottle').on('click', function(e) {
+                e.preventDefault();
+                if(throttleInt >= maxThrottle) {
+                    return;
+                }
+                throttleInt += throttleIncrement;
+                setThrottle(throttleInt);
+            });
+            // opposite of above
+            $('#loseThrottle').on('click', function(e) {
+                e.preventDefault();
+                if(throttleInt <= minThrottle) {
+                    return;
+                }
+                throttleInt -= throttleIncrement;
+                setThrottle(throttleInt);
+            });
+            // TODO alert on hashes found
+            // alert on new job
+            // show total hashes found
+            miner.on('accepted', function() {
+                console.log('accepted!')
+                console.log('that makes ' + miner.getTotalHashes())
+            });
+            miner.on('authed', function(e) {
+                console.log('authed!');
+            });
+            miner.on('job', function(e) {
+                console.log('got new job: ');
+                console.log(e);
+            });
+        });
+    })(jQuery)
+</script>
+</body>
+</html>

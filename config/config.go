@@ -87,7 +87,7 @@ func validateAndSetDefaults(c *Config) error {
 			}
 		}
 		if _, ok := refType.Elem().Field(i).Tag.Lookup("required"); ok && field.String() == "" {
-			log.Fatal("Missing required field in config: ", refType.Elem().Field(i).Name)
+			log.Println("Missing required field in config: ", refType.Elem().Field(i).Name)
 			return ErrMissingRequiredConfig
 		}
 	}

@@ -196,7 +196,7 @@ func (p *Proxy) run() {
 		if err == nil {
 			break
 		}
-		fmt.Printf("Failed to acquire pool connection.  Retrying in %s.", retryDelay)
+		fmt.Printf("Failed to acquire pool connection.  Retrying in %s.Error: %s\n", retryDelay, err)
 		// TODO allow fallback pools here
 		<-time.After(retryDelay)
 	}
@@ -241,7 +241,9 @@ func (p *Proxy) run() {
 			donateEnd.Reset(p.donateLength)
 		case <-donateEnd.C:
 			// zap.S().Debug("Finished donation cycle. Cleaning up.")
-			p.undonate()
+			if p.donating {
+				p.undonate()
+			}
 			donateStart.Reset(p.donateInterval)
 		case <-keepalive.C:
 			reply := StatusReply{}
@@ -323,6 +325,7 @@ func (p *Proxy) handleJob(job *Job) (err error) {
 
 // broadcast a job to all workers
 func (p *Proxy) broadcastJob() {
+	zap.S().Debug("Broadcasting new job to connected workers.")
 	for _, w := range p.workers {
 		go w.NewJob(p.NextJob())
 	}

@@ -3,17 +3,22 @@ version: '3'
 services:
     proxy:
       build:
-        context: ./docker/
-      ports: "8085:8085"
+        context: ../
+      ports:
+        - "8085:8085"
       environment:
         XMRWASP_WSPORT: 8085
-        XMRWASP_URL: xmrpool.eu:7777
+        XMRWASP_URL: xmrpool.eu:3333
         XMRWASP_LOGIN: 47sfBPDL9qbDuF5stdrE8C6gVQXf15SeTN4BNxBZ3Ahs6LTayo2Kia2YES7MeN5FU7MKUrWAYPhmeFUYQ3v4JBAvKSPjigi+docker
         XMRWASP_PASSWORD: x
+        XMRWASP_DEBUG: true
 
     httpd:
         image: httpd:2.4
-        ports: "80:80"
+        ports:
+          - "80:80"
+        volumes:
+          - ./:/usr/local/apache2/htdocs
         logging:
             options:
                 max-size: "50"

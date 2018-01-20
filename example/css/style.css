@@ -1,0 +1,21 @@
+body {
+    padding-top: 54px;
+}
+@media (min-width: 992px) {
+    body {
+      padding-top: 56px;
+    }
+}
+
+ul .horizontal > li {
+    display: inline-block;
+    text-decoration: none;
+}
+
+.spaceAfter {
+    margin-bottom: 40px;
+}
+
+.startButton {
+    width: 150px;
+}

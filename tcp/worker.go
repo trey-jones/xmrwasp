@@ -5,8 +5,6 @@ import (
 	"net"
 	"time"
 
-	"go.uber.org/zap"
-
 	"github.com/trey-jones/stratum"
 	"github.com/trey-jones/xmrwasp/proxy"
 )
@@ -80,7 +78,7 @@ func (w *Worker) Disconnect() {
 func (w *Worker) NewJob(j *proxy.Job) {
 	err := w.codec.Notify("job", j)
 	if err != nil {
-		zap.S().Error("Error sending job to worker: ", err)
+		// zap.S().Debug("Error sending job to worker: ", err)
 		w.Disconnect()
 	}
 	// other actions? shut down worker?
