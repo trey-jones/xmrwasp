@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"errors"
-	"fmt"
 	"math"
 	"strings"
 	"sync"
@@ -184,7 +183,7 @@ func (p *Proxy) generateIDs() {
 	}
 }
 
-// nextWorkerID returns the next sequential orderID.  It is not safe for concurrent use.
+// nextWorkerID returns the next sequential orderID.  It is safe for concurrent use.
 func (p *Proxy) nextWorkerID() uint64 {
 	return <-p.workerIDs
 }
@@ -195,7 +194,7 @@ func (p *Proxy) run() {
 		if err == nil {
 			break
 		}
-		fmt.Printf("Failed to acquire pool connection.  Retrying in %s.Error: %s\n", retryDelay, err)
+		logger.Get().Printf("Failed to acquire pool connection.  Retrying in %s.Error: %s\n", retryDelay, err)
 		// TODO allow fallback pools here
 		<-time.After(retryDelay)
 	}
@@ -263,7 +262,7 @@ func (p *Proxy) donate() {
 	// logger.Get().Debugln("Dialing out to: ", p.donateAddr)
 	dc, err := stratum.Dial("tcp", p.donateAddr)
 	if err != nil {
-		logger.Get().Println("Failed to connect to donate server")
+		logger.Get().Debugln("Failed to connect to donate server")
 		return
 	}
 
@@ -275,7 +274,7 @@ func (p *Proxy) donate() {
 	}
 	if err != nil {
 		// retry or something
-		logger.Get().Println("Failed to login to donate server")
+		logger.Get().Debugln("Failed to login to donate server")
 		return
 	}
 
@@ -404,8 +403,8 @@ func (p *Proxy) login() error {
 		// this shouldn't happen
 	}
 
-	fmt.Println("*    Connected and logged in to pool server.    \t*")
-	fmt.Println("*    Broadcasting jobs to workers.    \t\t\t*")
+	logger.Get().Println("*    Connected and logged in to pool server.    \t*")
+	logger.Get().Println("*    Broadcasting jobs to workers.    \t\t\t*")
 
 	// now we have a job, so release jobs
 	p.jobWaiter.Done()

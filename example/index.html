@@ -42,23 +42,34 @@
 
     <div class='row spaceAfter'>
         <div class='col-4 text-center'>
-            <p>Right now, this website is doing nothing.  The responsible way to mine monero on the web is to <strong>inform your users</strong> and <strong>allow them to opt-in or opt-out.</strong></p>
+            <p>The responsible way to mine monero on the web is to <strong>inform your users</strong> and <strong>allow them to opt-in or opt-out.</strong> If you want to see what exactly this browser mining business is, and how it affects your computer at various settings, be my guest.</p>
         </div>
         <div class="col-4 text-center">
-            <p><i class="fab fa-monero"></i> XMR WASP is not what you are looking at.  It is a proxy for monero miners.  <i class="fab fa-monero"></i> XMR WASP is handling any mining that occurs in browsers mining on  this site, as well as any donation traffic from users of the software by aggregating it and sending it to a mining pool.</p>
+            <p><i class="fab fa-monero"></i> XMR WASP is not what you are looking at.  It is a proxy for monero miners.  <i class="fab fa-monero"></i> XMR WASP is handling any mining that occurs in browsers mining on  this site, as well as any donation traffic from users of the software,  by aggregating it and sending it to a mining pool.</p>
         </div>
         <div class="col-4 text-center">
-            <p>This website seeks to promote use this software and other easily abused cryptocurrency mining solutions in a responsible way, and to educate users about how browser miners work.</p>
+            <p>This website seeks to promote use this software and other easily abused cryptocurrency mining solutions in a responsible way, and to educate users about how browser miners work.  For more information, check out the <a href='//github.com/trey-jones/xmrwasp' >project on github.</a></p>
         </div>
     </div>
 
     <div class="row spaceAfter">
-        <div class='col-4'>Info over here</div>
+        <div class='col-4'>
+            <div class='row'>
+                <h5 class='col-4'>Accepted: </h5>
+                <span class='col-2' id='acceptedHashes'>0</span>
+            </div>
+            <div class="row">
+                <div class='col-12' id='alerts'>
+                </div>
+            </div>
+        </div>
+
         <div class='col-4'>
             <div id="speedometer" class="gauge gauge-big gauge-green">
                 <div class="gauge-arrow" data-percentage="0" style="transform: rotate(0deg);"></div>
             </div>
         </div>
+
         <div class='col-4'>
             <div class='row text-center'>
                 <h5 class='col-3'>Threads: </h5>
@@ -135,6 +146,7 @@
                 minThrottle = 10,
                 throttleIncrement = 10,
                 uiUpdateInterval = 250, // ms
+                alertVanishDelay = 10000, // ms
                 hashRateGuageMult = 1.7;
 
             function startMiner() {
@@ -169,6 +181,15 @@
                 $('#currentHashrate').text(currentHashRate);
                 $('#totalHashes').text(totalHashes);
             }
+
+            function doAlert(text) {
+                var $alert = $('<p>').text(text);
+                $('#alerts').prepend($alert);
+                setTimeout(function() {
+                    $alert.fadeOut();
+                }, alertVanishDelay);
+            }
+
             function toggleMiner() {
                 mining ? stopMiner() : startMiner();
             }
@@ -193,6 +214,7 @@
                 throttle: 0.5
             }),
             throttleInt = 50, // try and avoid floating point display issues
+            acceptedHashes = 0,
             mining = false,
             uiLoop;
 
@@ -203,7 +225,6 @@
             $('#addThread').on('click', function(e) {
                 e.preventDefault();
                 var currentThreads = miner.getNumThreads();
-                console.log(currentThreads);
                 if (currentThreads >= maxThreads) {
                     return;
                 }
@@ -235,20 +256,18 @@
                 throttleInt -= throttleIncrement;
                 setThrottle(throttleInt);
             });
-            // TODO alert on hashes found
-            // alert on new job
-            // show total hashes found
+
             miner.on('accepted', function() {
-                console.log('accepted!')
-                console.log('that makes ' + miner.getTotalHashes())
-            });
-            miner.on('authed', function(e) {
-                console.log('authed!');
+                var total = miner.getAcceptedHashes();
+                doAlert("Hash accepted!");
+                $('#acceptedHashes').text(++acceptedHashes);
             });
             miner.on('job', function(e) {
-                console.log('got new job: ');
-                console.log(e);
+                doAlert('Starting new job from server.');
             });
+            // miner.on('found', function(e) {
+            //     doAlert('Submitting hash: ' + e.result);
+            // });
         });
     })(jQuery)
 </script>

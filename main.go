@@ -21,19 +21,19 @@ var (
 )
 
 func printWelcomeMessage() {
-	fmt.Println("************************************************************************")
-	fmt.Printf("*    XMR Web and Stratum Proxy \t\t\t\t v%s \n", version)
+	logger.Get().Println("************************************************************************")
+	logger.Get().Printf("*    XMR Web and Stratum Proxy \t\t\t\t v%s \n", version)
 	if !config.Get().DisableWebsocket {
 		port := config.Get().WebsocketPort
-		fmt.Printf("*    Accepting Websocket Connections on port: \t\t %s\n", port)
+		logger.Get().Printf("*    Accepting Websocket Connections on port: \t\t %s\n", port)
 	}
 	if !config.Get().DisableTCP {
 		port := config.Get().StratumPort
-		fmt.Printf("*    Accepting TCP Connections on port: \t\t\t\t %s\n", port)
+		logger.Get().Printf("*    Accepting TCP Connections on port: \t\t\t\t %s\n", port)
 	}
 	statInterval := config.Get().StatInterval
-	fmt.Printf("*    Printing stats every: \t\t\t\t %v seconds\n", statInterval)
-	fmt.Println("************************************************************************")
+	logger.Get().Printf("*    Printing stats every: \t\t\t\t %v seconds\n", statInterval)
+	logger.Get().Println("************************************************************************")
 }
 
 func usage() {
@@ -60,6 +60,9 @@ func setupLogger() {
 			log.Fatal("Error opening log file for writing: ", err)
 		}
 		lc.W = f
+	}
+	if c.DiscardLog {
+		lc.Discard = true
 	}
 	logger.Configure(lc)
 	logger.Get().Debugln("Logger is configured.")

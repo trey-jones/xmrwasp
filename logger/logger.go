@@ -20,6 +20,7 @@ var (
 		os.Stdout,
 		log.LstdFlags,
 		Info,
+		false,
 	}
 
 	// global logger singleton
@@ -28,9 +29,11 @@ var (
 )
 
 // Config allows selection of logger output, content and level (debug!)
+// new - create a logger that discards all output
 type Config struct {
 	W           io.Writer
 	Flag, Level int
+	Discard     bool
 }
 
 // Logger wraps the standard logger and adds a debug level
@@ -39,9 +42,20 @@ type Logger struct {
 	Level int
 }
 
+type discardWriter struct{}
+
+func (*discardWriter) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
 // Configure sets up the global logger.  This should be called from the main thread
 // before the logger is created with Get
 func Configure(c *Config) {
+	if c.Discard {
+		config.Discard = c.Discard // which would be true
+		config.W = &discardWriter{}
+	}
+	// The presence of a writer overrules the discard option
 	if c.W != nil {
 		config.W = c.W
 	}
