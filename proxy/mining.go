@@ -5,8 +5,7 @@ import (
 	"strconv"
 
 	"github.com/sourcegraph/jsonrpc2"
-
-	"go.uber.org/zap"
+	"github.com/trey-jones/xmrwasp/logger"
 )
 
 // PassThruParams is a generic type for handling RPC requests.  It can (should) contain the context
@@ -19,7 +18,7 @@ func (p PassThruParams) Context() context.Context {
 	if ctx, ok := p["ctx"]; ok {
 		return ctx.(context.Context)
 	}
-	zap.S().Error("Failed to get context on request with params: ", p)
+	logger.Get().Println("Failed to get context on request with params: ", p)
 	return nil
 }
 

@@ -3,13 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 
 	ews "github.com/eyesore/ws"
 	"github.com/trey-jones/xmrwasp/config"
+	"github.com/trey-jones/xmrwasp/logger"
 	"github.com/trey-jones/xmrwasp/tcp"
 	"github.com/trey-jones/xmrwasp/ws"
-	"go.uber.org/zap"
 )
 
 var (
@@ -48,17 +49,23 @@ func setOptions() {
 }
 
 func setupLogger() {
-	var l *zap.Logger
-	if config.Get().Debug {
-		l, _ = zap.NewDevelopment()
-	} else {
-		l, _ = zap.NewProduction()
+	lc := &logger.Config{W: nil}
+	c := config.Get()
+	if c.Debug {
+		lc.Level = logger.Debug
 	}
-	zap.ReplaceGlobals(l)
+	if c.LogFile != "" {
+		f, err := os.Create(c.LogFile)
+		if err != nil {
+			log.Fatal("Error opening log file for writing: ", err)
+		}
+		lc.W = f
+	}
+	logger.Configure(lc)
+	logger.Get().Debugln("Logger is configured.")
 }
 
 func main() {
-	// TODO define logging interface
 	setOptions()
 	setupLogger()
 
@@ -75,17 +82,13 @@ func main() {
 	holdOpen := make(chan bool, 1)
 
 	if !config.Get().DisableWebsocket {
-		go ws.StartServer(zap.S())
+		go ws.StartServer()
 	}
 	if !config.Get().DisableTCP {
-		go tcp.StartServer(zap.S())
+		go tcp.StartServer()
 	}
 
 	printWelcomeMessage()
 
-	if !config.Get().Background {
-		// TODO - this won't do it
-		<-holdOpen
-	}
-	zap.S().Sync()
+	<-holdOpen
 }

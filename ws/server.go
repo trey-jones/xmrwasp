@@ -5,18 +5,18 @@ import (
 
 	"github.com/eyesore/ws"
 	"github.com/trey-jones/xmrwasp/config"
-	"go.uber.org/zap"
+	"github.com/trey-jones/xmrwasp/logger"
 )
 
-func StartServer(logger *zap.SugaredLogger) {
+func StartServer() {
 	h := ws.NewHandler(NewWorker)
 	h.AllowAnyOrigin()
 
 	http.Handle("/", h)
 	websocketPort := ":" + config.Get().WebsocketPort
-	logger.Debug("Starting webserver on port: ", websocketPort)
+	logger.Get().Debug("Starting webserver on port: ", websocketPort)
 	err := http.ListenAndServe(websocketPort, nil)
 	if err != nil {
-		logger.Fatal("Failed to start server")
+		logger.Get().Fatal("Failed to start server")
 	}
 }

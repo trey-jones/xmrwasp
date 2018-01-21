@@ -8,10 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/zap"
-
 	"github.com/trey-jones/stratum"
 	"github.com/trey-jones/xmrwasp/config"
+	"github.com/trey-jones/xmrwasp/logger"
 )
 
 const (
@@ -166,7 +165,7 @@ func New(id uint64) *Proxy {
 	ss := stratum.NewServer()
 	p.SS = ss
 	p.SS.RegisterName("mining", &Mining{})
-	zap.S().Debug("RPC server is listening on proxy ", p.ID)
+	logger.Get().Debugln("RPC server is listening on proxy ", p.ID)
 
 	p.configureDonations()
 
@@ -214,14 +213,14 @@ func (p *Proxy) run() {
 		select {
 		// these are from workers
 		case s := <-p.submissions:
-			// zap.S().Debug("Submitting share to primary pool: ", s.JobID)
+			// logger.Get().Debugln("Submitting share to primary pool: ", s.JobID)
 			err := p.handleSubmit(s, p.SC)
 			if err != nil && strings.Contains(strings.ToLower(err.Error()), "banned") {
-				zap.S().Error("Banned IP - killing proxy: ", p.ID)
+				logger.Get().Println("Banned IP - killing proxy: ", p.ID)
 				return
 			}
 		case s := <-p.donations:
-			// zap.S().Debug("Submitting share to donate server: ", s.JobID)
+			// logger.Get().Debugln("Submitting share to donate server: ", s.JobID)
 			p.handleSubmit(s, p.DC) // donate server will handle it's own errors
 		case w := <-p.addWorker:
 			p.receiveWorker(w)
@@ -236,11 +235,11 @@ func (p *Proxy) run() {
 
 		// these are based on known regular intervals
 		case <-donateStart.C:
-			// zap.S().Debug("Switching to donation server")
+			// logger.Get().Debugln("Switching to donation server")
 			p.donate()
 			donateEnd.Reset(p.donateLength)
 		case <-donateEnd.C:
-			// zap.S().Debug("Finished donation cycle. Cleaning up.")
+			// logger.Get().Debugln("Finished donation cycle. Cleaning up.")
 			if p.donating {
 				p.undonate()
 			}
@@ -252,19 +251,19 @@ func (p *Proxy) run() {
 				err = reply.Error
 			}
 			if err != nil {
-				zap.S().Error("Received error from keepalive request: ", err)
+				logger.Get().Println("Received error from keepalive request: ", err)
 				return
 			}
-			zap.S().Debug("Keepalived response: ", reply)
+			logger.Get().Debugln("Keepalived response: ", reply)
 		}
 	}
 }
 
 func (p *Proxy) donate() {
-	// zap.S().Debug("Dialing out to: ", p.donateAddr)
+	// logger.Get().Debugln("Dialing out to: ", p.donateAddr)
 	dc, err := stratum.Dial("tcp", p.donateAddr)
 	if err != nil {
-		zap.S().Error("Failed to connect to donate server")
+		logger.Get().Println("Failed to connect to donate server")
 		return
 	}
 
@@ -276,7 +275,7 @@ func (p *Proxy) donate() {
 	}
 	if err != nil {
 		// retry or something
-		zap.S().Error("Failed to login to donate server")
+		logger.Get().Println("Failed to login to donate server")
 		return
 	}
 
@@ -288,7 +287,7 @@ func (p *Proxy) donate() {
 
 	err = p.handleDonateJob(reply.Job)
 	if err != nil {
-		zap.S().Error("Error handling new job from donation server.")
+		logger.Get().Println("Error handling new job from donation server.")
 		return
 	}
 }
@@ -299,7 +298,7 @@ func (p *Proxy) undonate() {
 	p.jobMu.Unlock()
 	// give client 30 seconds, then DC
 	time.AfterFunc(donateShutdownDelay, func() {
-		// zap.S().Debug("Shutting down donation conn")
+		// logger.Get().Debugln("Shutting down donation conn")
 		p.DC.Close()
 	})
 	p.handleJob(p.currentJob)
@@ -314,18 +313,18 @@ func (p *Proxy) handleJob(job *Job) (err error) {
 	p.jobMu.Unlock()
 
 	if err != nil || p.donating {
-		// zap.S().Debug("Skipping regular job broadcast: ", err)
+		// logger.Get().Debugln("Skipping regular job broadcast: ", err)
 		return
 	}
 
-	// zap.S().Debug("Broadcasting new regular job: ", job.ID)
+	// logger.Get().Debugln("Broadcasting new regular job: ", job.ID)
 	p.broadcastJob()
 	return
 }
 
 // broadcast a job to all workers
 func (p *Proxy) broadcastJob() {
-	zap.S().Debug("Broadcasting new job to connected workers.")
+	logger.Get().Debugln("Broadcasting new job to connected workers.")
 	for _, w := range p.workers {
 		go w.NewJob(p.NextJob())
 	}
@@ -346,10 +345,10 @@ func (p *Proxy) handleDonateJob(job *Job) (err error) {
 	// the donate client will remain connected for ~30s after donate period,
 	// so ignore any new jobs at that point
 	if err != nil || !p.donating {
-		// zap.S().Debug("Skipping donate job broadcast: ", err)
+		// logger.Get().Debugln("Skipping donate job broadcast: ", err)
 		return
 	}
-	// zap.S().Debug("Broadcasting new donate job:", job.ID)
+	// logger.Get().Debugln("Broadcasting new donate job:", job.ID)
 	p.broadcastJob()
 	return
 }
@@ -367,13 +366,13 @@ func (p *Proxy) handleNotification(notif stratum.Notification, donate bool) {
 		}
 		if err != nil {
 			// log and wait for the next job?
-			zap.S().Error("Error processing job: ", job)
-			zap.S().Error(err)
+			logger.Get().Println("Error processing job: ", job)
+			logger.Get().Println(err)
 		}
 	default:
-		zap.S().Infow("Received notification from server: ",
-			"method", notif.Method,
-			"params", notif.Params,
+		logger.Get().Println("Received notification from server: ",
+			"method: ", notif.Method,
+			"params: ", notif.Params,
 		)
 	}
 }
@@ -383,7 +382,7 @@ func (p *Proxy) login() error {
 	if err != nil {
 		return err
 	}
-	zap.S().Debug("Client made pool connection.")
+	logger.Get().Debugln("Client made pool connection.")
 	p.SC = sc
 
 	p.notify = p.SC.Notifications()
@@ -396,11 +395,11 @@ func (p *Proxy) login() error {
 	if err != nil {
 		return err
 	}
-	zap.S().Debug("Successfully logged into pool.")
+	logger.Get().Debugln("Successfully logged into pool.")
 	p.authID = reply.ID
 	err = p.handleJob(reply.Job)
 	if err != nil {
-		zap.S().Error("Error processing job: ", reply.Job)
+		logger.Get().Println("Error processing job: ", reply.Job)
 		// continue and just wait for the next job?
 		// this shouldn't happen
 	}
@@ -458,8 +457,8 @@ func (p *Proxy) configureDonations() {
 	}
 	p.donateLength = (time.Duration(math.Floor(float64(donateCycle)*(float64(donateLevel)/100))) * time.Second)
 	p.donateInterval = (donateCycle * time.Second) - p.donateLength
-	// zap.S().Debug("DonateLength is: ", p.donateLength)
-	// zap.S().Debug("DonateInterval is: ", p.donateInterval)
+	// logger.Get().Debugln("DonateLength is: ", p.donateLength)
+	// logger.Get().Debugln("DonateInterval is: ", p.donateInterval)
 }
 
 func (p *Proxy) shutdown() {
@@ -483,14 +482,14 @@ func (p *Proxy) handleSubmit(s *share, c *stratum.Client) (err error) {
 		close(s.Error)
 	}()
 	if c == nil {
-		zap.S().Debug("Dropping share due to nil client for job: ", s.JobID)
+		logger.Get().Debugln("Dropping share due to nil client for job: ", s.JobID)
 		err = errors.New("no client to handle share")
 		s.Error <- err
 		return
 	}
 
 	if err = p.validateShare(s); err != nil {
-		zap.S().Debug("Rejecting share with: ", err)
+		logger.Get().Debugln("Rejecting share with: ", err)
 		s.Error <- err
 		return
 	}
@@ -505,7 +504,7 @@ func (p *Proxy) handleSubmit(s *share, c *stratum.Client) (err error) {
 		p.shares++
 	}
 
-	// zap.S().Debugf("Proxy %v share submit response: %s", p.ID, reply)
+	// logger.Get().Debuglnf("Proxy %v share submit response: %s", p.ID, reply)
 	s.Response <- &reply
 	s.Error <- nil
 	return

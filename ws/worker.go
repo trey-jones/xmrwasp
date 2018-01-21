@@ -71,7 +71,7 @@ func (w *Worker) OnOpen() error {
 
 // OnClose implements ews.Connector
 func (w *Worker) OnClose(wasClean bool, code int, reason error) error {
-	// zap.S().Debug("OnClose is called for worker")
+	// logger.Get().Debugln("OnClose is called for worker")
 	w.p.Remove(w)
 
 	return nil
@@ -95,14 +95,14 @@ func (w *Worker) Proxy() *proxy.Proxy {
 }
 
 func (w *Worker) Disconnect() {
-	// zap.S().Debug("Disconnect is called for worker.")
+	// logger.Get().Debugln("Disconnect is called for worker.")
 	w.Conn().Close()
 }
 
 func (w *Worker) NewJob(j *proxy.Job) {
 	err := w.codec.Notify("job", j)
 	if err != nil {
-		// zap.S().Debug("Error sending job to worker: ", err)
+		// logger.Get().Debugln("Error sending job to worker: ", err)
 		w.Disconnect()
 	}
 }

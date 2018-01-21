@@ -78,7 +78,7 @@ func (w *Worker) Disconnect() {
 func (w *Worker) NewJob(j *proxy.Job) {
 	err := w.codec.Notify("job", j)
 	if err != nil {
-		// zap.S().Debug("Error sending job to worker: ", err)
+		// logger.Get().Debugln("Error sending job to worker: ", err)
 		w.Disconnect()
 	}
 	// other actions? shut down worker?

@@ -42,7 +42,14 @@ type Logger struct {
 // Configure sets up the global logger.  This should be called from the main thread
 // before the logger is created with Get
 func Configure(c *Config) {
-	config = c
+	if c.W != nil {
+		config.W = c.W
+	}
+	if c.Flag != 0 {
+		// flags start at 1
+		config.Flag = c.Flag
+	}
+	config.Level = c.Level
 }
 
 // New makes a new logger with config.

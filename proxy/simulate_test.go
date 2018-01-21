@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"math/rand"
 	"net"
@@ -18,9 +17,9 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/trey-jones/stratum"
 	"github.com/trey-jones/wstest"
+	"github.com/trey-jones/xmrwasp/logger"
 	"github.com/trey-jones/xmrwasp/tcp"
 	"github.com/trey-jones/xmrwasp/ws"
-	"go.uber.org/zap"
 
 	"net/http/httptest"
 	_ "net/http/pprof"
@@ -377,13 +376,12 @@ func configure() {
 	flag.BoolVar(&debug, "d", false, "use the debug logger during the test (can be very verbose")
 	flag.Parse()
 
-	var l *zap.Logger
+	lc := &logger.Config{W: nil}
 	if debug {
-		l, _ = zap.NewDevelopment()
-	} else {
-		l, _ = zap.NewProduction()
+		lc.Level = logger.Debug
 	}
-	zap.ReplaceGlobals(l)
+	logger.Configure(lc)
+	logger.Get().Debug("Logger is configured")
 }
 
 func TestMain(m *testing.M) {
@@ -457,7 +455,7 @@ func testWsWorkers(t *testing.T) {
 			return
 		}
 	}
-	fmt.Println("WS worker loop finished.  Waiting on test duration.")
+	logger.Get().Debugln("WS worker loop finished.  Waiting on test duration.")
 }
 
 func testTCPWorkers(t *testing.T) {
@@ -476,5 +474,5 @@ func testTCPWorkers(t *testing.T) {
 			return
 		}
 	}
-	fmt.Println("TCP worker loop finished. Waiting on test duration.")
+	logger.Get().Debugln("TCP worker loop finished. Waiting on test duration.")
 }
