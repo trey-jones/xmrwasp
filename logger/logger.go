@@ -87,14 +87,14 @@ func (l *Logger) Debug(v ...interface{}) {
 	if l.Level < Debug {
 		return
 	}
-	l.Logger.Print(v)
+	l.Logger.Print(v...)
 }
 
 func (l *Logger) Debugf(format string, v ...interface{}) {
 	if l.Level < Debug {
 		return
 	}
-	l.Logger.Printf(format, v)
+	l.Logger.Printf(format, v...)
 }
 
 func (l *Logger) Debugln(v ...interface{}) {
@@ -102,5 +102,5 @@ func (l *Logger) Debugln(v ...interface{}) {
 		return
 	}
 
-	l.Logger.Println(v)
+	l.Logger.Println(v...)
 }

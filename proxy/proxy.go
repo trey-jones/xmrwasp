@@ -503,7 +503,7 @@ func (p *Proxy) handleSubmit(s *share, c *stratum.Client) (err error) {
 		p.shares++
 	}
 
-	// logger.Get().Debuglnf("Proxy %v share submit response: %s", p.ID, reply)
+	logger.Get().Debugf("Proxy %v share submit response: %s", p.ID, reply)
 	s.Response <- &reply
 	s.Error <- nil
 	return

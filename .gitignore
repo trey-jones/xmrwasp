@@ -21,3 +21,7 @@
 
 docker-compose.override.yml
 
+dist
+deployment
+build.sh
+deploy.sh
