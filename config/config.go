@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -35,6 +36,11 @@ type Config struct {
 	DisableTCP       bool   `envconfig:"notcp" default:"true" json:"notcp"`
 	WebsocketPort    string `envconfig:"wsport" default:"8080" json:"wsport"`
 	StratumPort      string `envconfig:"strport" default:"1111" json:"strport"`
+
+	SecureWebsocket bool   `envconfig:"wss" json:"wss"`
+	CertFile        string `envconfig:"tlscert" json:"tlscert"`
+	KeyFile         string `envconfig:"tlskey" json:"tlskey"`
+	// TODO also support TLS for stratum connections
 
 	// TODO multiple pools for fallback
 	PoolAddr     string `envconfig:"url" required:"true" json:"url"`
@@ -90,7 +96,7 @@ func validateAndSetDefaults(c *Config) error {
 			}
 		}
 		if _, ok := refType.Elem().Field(i).Tag.Lookup("required"); ok && field.String() == "" {
-			log.Println("Missing required field in config: ", refType.Elem().Field(i).Name)
+			fmt.Println("Missing required field in config: ", refType.Elem().Field(i).Name)
 			return ErrMissingRequiredConfig
 		}
 	}

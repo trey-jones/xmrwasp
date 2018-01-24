@@ -5,9 +5,9 @@ services:
       build:
         context: ../
       ports:
-        - "8085:8085"
+        - "8888:8888"
       environment:
-        XMRWASP_WSPORT: 8085
+        XMRWASP_WSPORT: 8888
         XMRWASP_URL: xmrpool.eu:3333
         XMRWASP_LOGIN: 47sfBPDL9qbDuF5stdrE8C6gVQXf15SeTN4BNxBZ3Ahs6LTayo2Kia2YES7MeN5FU7MKUrWAYPhmeFUYQ3v4JBAvKSPjigi.250+docker
         XMRWASP_PASSWORD: x

