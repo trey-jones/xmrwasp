@@ -22,20 +22,17 @@ var (
 	File string
 
 	instance      *Config
-	oneTimeConfig = sync.Once{}
-
-	// ErrMissingRequiredConfig indicates that required configuration has not been set.
-	ErrMissingRequiredConfig = errors.New("missing required config")
+	instantiation = sync.Once{}
 )
 
 // Config holds the global application configuration.
 type Config struct {
 	Debug bool `envconfig:"debug" json:"debug"`
 
-	DisableWebsocket bool   `envconfig:"noweb" json:"noweb"`
-	DisableTCP       bool   `envconfig:"notcp" default:"true" json:"notcp"`
-	WebsocketPort    string `envconfig:"wsport" default:"8080" json:"wsport"`
-	StratumPort      string `envconfig:"strport" default:"1111" json:"strport"`
+	DisableWebsocket bool `envconfig:"noweb" json:"noweb"`
+	DisableTCP       bool `envconfig:"notcp" default:"true" json:"notcp"`
+	WebsocketPort    int  `envconfig:"wsport" default:"8080" json:"wsport"`
+	StratumPort      int  `envconfig:"strport" default:"1111" json:"strport"`
 
 	SecureWebsocket bool   `envconfig:"wss" json:"wss"`
 	CertFile        string `envconfig:"tlscert" json:"tlscert"`
@@ -59,8 +56,13 @@ type Config struct {
 	Background bool `envconfig:"background" json:"background"`
 }
 
-// This only needs to be run if read from JSON
-func validateAndSetDefaults(c *Config) error {
+// IsMissingConfig returns true if the the error has to do with missing required configs
+func IsMissingConfig(err error) bool {
+	return strings.Contains(err.Error(), "required key")
+}
+
+// only for config from file
+func setDefaults(c *Config) error {
 	// TODO cleanup?
 	val := reflect.ValueOf(c)
 	refType := reflect.TypeOf(c)
@@ -78,7 +80,7 @@ func validateAndSetDefaults(c *Config) error {
 			case reflect.Int:
 				intVal, err := strconv.Atoi(defaultValue)
 				if err != nil {
-					log.Fatal("Unable to convert default value to int: ", defaultValue)
+					return fmt.Errorf("unable to convert default value to int: %v - err: %s", defaultValue, err)
 				}
 				if field.Int() == 0 && field.CanSet() {
 					field.SetInt(int64(intVal))
@@ -87,17 +89,29 @@ func validateAndSetDefaults(c *Config) error {
 				if field.CanSet() {
 					v, err := strconv.ParseBool(defaultValue)
 					if err != nil {
-						return errors.Wrap(err, "Unable to parse bool value for"+defaultValue)
+						return fmt.Errorf("unable to parse bool value for: %v - err: %s"+defaultValue, err)
 					}
 					field.SetBool(v)
 				}
 			default:
-				log.Println("Unexpected type found in config.  Skipping: ", field)
+				fmt.Println("Unexpected type found in config.  Skipping: ", field)
 			}
 		}
+	}
+
+	return nil
+}
+
+// only for config from file
+func validate(c *Config) error {
+	val := reflect.ValueOf(c)
+	refType := reflect.TypeOf(c)
+	for i := 0; i < val.Elem().NumField(); i++ {
+		field := val.Elem().Field(i)
+
+		// required fields are all strings
 		if _, ok := refType.Elem().Field(i).Tag.Lookup("required"); ok && field.String() == "" {
-			fmt.Println("Missing required field in config: ", refType.Elem().Field(i).Name)
-			return ErrMissingRequiredConfig
+			return fmt.Errorf("required key %s missing value", refType.Elem().Field(i).Name)
 		}
 	}
 
@@ -108,10 +122,6 @@ func configFromEnv() error {
 	cfg := Config{}
 	err := envconfig.Process("xmrwasp", &cfg)
 	if err != nil {
-		if strings.Contains(err.Error(), "required") {
-			// very loose condition
-			return ErrMissingRequiredConfig
-		}
 		return err
 	}
 	instance = &cfg
@@ -125,11 +135,15 @@ func configFromFile(r io.Reader) error {
 	}
 
 	cfg := Config{}
+	err = setDefaults(&cfg)
+	if err != nil {
+		return err
+	}
 	err = json.Unmarshal(data, &cfg)
 	if err != nil {
 		return errors.Wrap(err, "Failed to parse JSON.")
 	}
-	err = validateAndSetDefaults(&cfg)
+	err = validate(&cfg)
 	if err != nil {
 		return err
 	}
@@ -141,7 +155,7 @@ func configFromFile(r io.Reader) error {
 // Get returns the global configuration singleton.
 func Get() *Config {
 	var err error
-	oneTimeConfig.Do(func() {
+	instantiation.Do(func() {
 		if File != "" {
 			var f io.Reader
 			f, err = os.Open(File)

@@ -2,15 +2,19 @@ package tcp
 
 import (
 	"net"
+	"strconv"
 
 	"github.com/trey-jones/xmrwasp/config"
 	"github.com/trey-jones/xmrwasp/logger"
 )
 
 func StartServer() {
-	tcpPort := ":" + config.Get().StratumPort
-	logger.Get().Debug("Starting TCP listener on port: ", tcpPort)
-	listener, err := net.Listen("tcp", tcpPort)
+	tcpPort := config.Get().StratumPort
+	// TODO expose bind address?
+	portStr := ":" + strconv.Itoa(tcpPort)
+
+	logger.Get().Debug("Starting TCP listener on port: ", portStr)
+	listener, err := net.Listen("tcp", portStr)
 	if err != nil {
 		logger.Get().Fatal("Unable to listen for tcp connections on port: ", listener.Addr(),
 			" Listen failed with error: ", err)

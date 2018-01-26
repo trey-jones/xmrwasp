@@ -127,7 +127,10 @@ One of the primary features of this piece of software has to do with enabling Mo
 
 1. Max Proxy Lifetime and Eventual Spindown
 2. Web Interface exposing current status and history
-3. Debian repository?
+3. User Feedback?
+4. TLS support for stratum listeners
+5. Config as daemon
+6. Linux repositories?
 
 ## Support This Project
 
