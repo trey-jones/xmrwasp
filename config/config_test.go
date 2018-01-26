@@ -31,7 +31,7 @@ func testGetConfigDefaults() (defaultStrings map[string]string, defaultInts map[
 	}
 	defaultInts = map[int]int{
 		instance.StatInterval: 60,
-		instance.DonateLevel:  3,
+		instance.DonateLevel:  2,
 	}
 	return
 }

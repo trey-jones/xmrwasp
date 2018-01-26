@@ -49,7 +49,7 @@ type Config struct {
 
 	StatInterval int `envconfig:"stats" default:"60" json:"stats"`
 
-	DonateLevel int `envconfig:"donate" default:"3" json:"donate"`
+	DonateLevel int `envconfig:"donate" default:"2" json:"donate"`
 
 	// LogFile and DiscardLog are mutually exclusive - logfile will be used if present
 	LogFile    string `envconfig:"log" json:"log"`

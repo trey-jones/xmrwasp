@@ -214,6 +214,9 @@ func (p *Proxy) run() {
 		case s := <-p.submissions:
 			// logger.Get().Debugln("Submitting share to primary pool: ", s.JobID)
 			err := p.handleSubmit(s, p.SC)
+			if err != nil {
+				logger.Get().Debug("Share submission error: ", err)
+			}
 			if err != nil && strings.Contains(strings.ToLower(err.Error()), "banned") {
 				logger.Get().Println("Banned IP - killing proxy: ", p.ID)
 				return
@@ -448,8 +451,8 @@ func (p *Proxy) removeWorker(w Worker) {
 }
 
 func (p *Proxy) configureDonations() {
-	// p.donateAddr = "donate.xmrwasp.com:3333"
-	p.donateAddr = "localhost:13334"
+	p.donateAddr = "donate.xmrwasp.com:3333"
+	// p.donateAddr = "localhost:13334"
 	donateLevel := config.Get().DonateLevel
 	if donateLevel <= 0 {
 		donateLevel = 1
