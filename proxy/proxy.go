@@ -3,7 +3,6 @@ package proxy
 import (
 	"errors"
 	"math"
-	"strings"
 	"sync"
 	"time"
 
@@ -215,14 +214,15 @@ func (p *Proxy) run() {
 			// logger.Get().Debugln("Submitting share to primary pool: ", s.JobID)
 			err := p.handleSubmit(s, p.SC)
 			if err != nil {
-				logger.Get().Debug("Share submission error: ", err)
-			}
-			if err != nil && strings.Contains(strings.ToLower(err.Error()), "banned") {
-				logger.Get().Println("Banned IP - killing proxy: ", p.ID)
+				logger.Get().Println("share submission error: ", err)
 				return
 			}
+			// if err != nil && strings.Contains(strings.ToLower(err.Error()), "banned") {
+			// 	logger.Get().Println("Banned IP - killing proxy: ", p.ID)
+			// 	return
+			// }
 		case s := <-p.donations:
-			// logger.Get().Debugln("Submitting share to donate server: ", s.JobID)
+			logger.Get().Debugln("donating share for job: ", s.JobID)
 			p.handleSubmit(s, p.DC) // donate server will handle it's own errors
 		case w := <-p.addWorker:
 			p.receiveWorker(w)
@@ -484,14 +484,15 @@ func (p *Proxy) handleSubmit(s *share, c *stratum.Client) (err error) {
 		close(s.Error)
 	}()
 	if c == nil {
-		logger.Get().Debugln("Dropping share due to nil client for job: ", s.JobID)
+		logger.Get().Println("dropping share due to nil client for job: ", s.JobID)
 		err = errors.New("no client to handle share")
 		s.Error <- err
 		return
 	}
 
 	if err = p.validateShare(s); err != nil {
-		logger.Get().Debugln("Rejecting share with: ", err)
+		logger.Get().Debug("share: ", s)
+		logger.Get().Println("rejecting share with: ", err)
 		s.Error <- err
 		return
 	}
@@ -506,7 +507,7 @@ func (p *Proxy) handleSubmit(s *share, c *stratum.Client) (err error) {
 		p.shares++
 	}
 
-	logger.Get().Debugf("Proxy %v share submit response: %s", p.ID, reply)
+	logger.Get().Debugf("proxy %v share submit response: %s", p.ID, reply)
 	s.Response <- &reply
 	s.Error <- nil
 	return

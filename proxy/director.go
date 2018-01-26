@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"sort"
 	"sync"
 	"time"
 
@@ -16,6 +15,7 @@ var (
 
 // Director might be refactored to "ProxyGroup"
 type Director struct {
+	aliveSince   time.Time
 	statInterval time.Duration
 
 	workers chan Worker
@@ -38,6 +38,7 @@ func GetDirector() *Director {
 
 func newDirector() *Director {
 	d := &Director{
+		aliveSince:   time.Now(),
 		statInterval: time.Duration(config.Get().StatInterval) * time.Second,
 
 		proxies: make(map[uint64]*Proxy),
@@ -79,8 +80,7 @@ func (d *Director) run() {
 
 func (d *Director) printStats() {
 	stats := d.GetStats()
-
-	logger.Get().Printf("Alive for %s \t\t %v proxies \t %v workers \t %v shares(+%v)\n",
+	logger.Get().Printf("uptime:%s \t\t proxies:%v \t workers:%v \t shares:%v(+%v)\n",
 		stats.Alive, stats.Proxies, stats.Workers, stats.Shares, stats.NewShares)
 }
 
@@ -120,7 +120,7 @@ func (d *Director) GetStats() *Stats {
 	totalWorkers := 0
 	proxyIDs := make([]int, 0)
 	var totalSharesSubmitted uint64
-	var aliveSince time.Time
+	// var aliveSince time.Time
 	for ID, p := range d.proxies {
 		proxyIDs = append(proxyIDs, int(ID))
 		totalProxies++
@@ -129,13 +129,14 @@ func (d *Director) GetStats() *Stats {
 	}
 	recentShares := totalSharesSubmitted - d.lastTotalShares
 	d.lastTotalShares = totalSharesSubmitted
-	if len(proxyIDs) > 0 {
-		sort.Ints(proxyIDs)
-		oldestProxyID := proxyIDs[0]
-		oldestProxy := d.proxies[uint64(oldestProxyID)]
-		aliveSince = oldestProxy.aliveSince
-	}
-	duration := time.Now().Sub(aliveSince).Truncate(1 * time.Second)
+	// if len(proxyIDs) > 0 {
+	// 	sort.Ints(proxyIDs)
+	// 	oldestProxyID := proxyIDs[0]
+	// 	oldestProxy := d.proxies[uint64(oldestProxyID)]
+	// 	aliveSince = oldestProxy.aliveSince
+	// }
+	// duration := time.Now().Sub(aliveSince).Truncate(1 * time.Second)
+	duration := time.Now().Sub(d.aliveSince).Truncate(1 * time.Second)
 
 	stats := &Stats{
 		Timestamp: time.Now(),

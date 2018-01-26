@@ -125,12 +125,13 @@ One of the primary features of this piece of software has to do with enabling Mo
 
 ## Roadmap
 
-1. Max Proxy Lifetime and Eventual Spindown
-2. Web Interface exposing current status and history
-3. User Feedback?
-4. TLS support for stratum listeners
-5. Config as daemon
-6. Linux repositories?
+* Max Proxy Lifetime and Eventual Spindown
+* Web Interface exposing current status and history
+* Performance Improvements: Faster release of memory on broken connections
+* User Feedback?
+* TLS support for stratum listeners
+* Config as daemon
+* Linux repositories?
 
 ## Support This Project
 
@@ -141,7 +142,7 @@ The project has a donation mechanism built in.  By default it donates (without b
 
 ### Support Through Development
 
-I will gladly take a look at any pull requests that come my way.  In particular if you wanted to take a stab at any of the following types of items that are hindered by my skillset and interests:
+I will gladly take a look at any pull requests that come my way.  In particular if you wanted to take a stab at any of the following types of items that don't align very well with my skillset and interests:
 
 * Making the [example app](https://www.xmrwasp.com) look nice
 * Building (or mocking up) a nice looking dashboard for a future web interface feature

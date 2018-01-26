@@ -94,7 +94,7 @@ func setDefaults(c *Config) error {
 					field.SetBool(v)
 				}
 			default:
-				fmt.Println("Unexpected type found in config.  Skipping: ", field)
+				log.Println("Unexpected type found in config.  Skipping: ", field)
 			}
 		}
 	}
@@ -157,12 +157,12 @@ func Get() *Config {
 	var err error
 	instantiation.Do(func() {
 		if File != "" {
-			var f io.Reader
-			f, err = os.Open(File)
+			f, err := os.Open(File)
 			if err != nil {
 				log.Fatal("open config file failed: ", err)
 				return
 			}
+			defer f.Close()
 			err = configFromFile(f)
 		} else {
 			// try to read config from environment

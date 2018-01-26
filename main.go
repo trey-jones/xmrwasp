@@ -25,11 +25,11 @@ func printWelcomeMessage() {
 	logger.Get().Printf("*    XMR Web and Stratum Proxy \t\t\t\t v%s \n", version)
 	if !config.Get().DisableWebsocket {
 		port := config.Get().WebsocketPort
-		logger.Get().Printf("*    Accepting Websocket Connections on port: \t\t %s\n", port)
+		logger.Get().Printf("*    Accepting Websocket Connections on port: \t\t %v\n", port)
 	}
 	if !config.Get().DisableTCP {
 		port := config.Get().StratumPort
-		logger.Get().Printf("*    Accepting TCP Connections on port: \t\t\t\t %s\n", port)
+		logger.Get().Printf("*    Accepting TCP Connections on port: \t\t\t\t %v\n", port)
 	}
 	statInterval := config.Get().StatInterval
 	logger.Get().Printf("*    Printing stats every: \t\t\t\t %v seconds\n", statInterval)
@@ -37,7 +37,7 @@ func printWelcomeMessage() {
 }
 
 func usage() {
-	fmt.Printf("Usage: %s [CONFIG_PATH] \n", os.Args[0])
+	fmt.Printf("Usage: %s [-c CONFIG_PATH] \n", os.Args[0])
 	flag.PrintDefaults()
 }
 
