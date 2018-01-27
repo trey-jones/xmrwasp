@@ -3,11 +3,18 @@ package proxy
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
+
+	"github.com/trey-jones/xmrwasp/logger"
 )
 
 const (
 	nonceOffset = 39
 	nonceLength = 4 // bytes
+)
+
+var (
+	ErrUnknownTargetFormat = errors.New("unrecognized format for job target")
 )
 
 // Job is a mining job.  Break it up and send chunks to workers.
@@ -54,4 +61,22 @@ func (j *Job) Nonce() (nonce uint32, blobBytes []byte, err error) {
 	nonce = binary.BigEndian.Uint32(nonceBytes)
 
 	return
+}
+
+// can we count on uint32 hex targets?
+func (j *Job) getTargetUint64() (uint64, error) {
+	target := j.Target
+	if len(target) == 8 {
+		target += "00000000"
+	}
+	if len(target) != 16 {
+		logger.Get().Println("Job target format is : ", target)
+		return 0, ErrUnknownTargetFormat
+	}
+	targetBytes, err := hex.DecodeString(target)
+	if err != nil {
+		return 0, err
+	}
+
+	return binary.BigEndian.Uint64(targetBytes), nil
 }

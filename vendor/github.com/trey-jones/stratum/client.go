@@ -334,3 +334,12 @@ func Dial(network, address string) (*Client, error) {
 	}
 	return NewClient(conn), err
 }
+
+// DialTimeout is Dial, but with the timeout specified
+func DialTimeout(network, address string, timeout time.Duration) (*Client, error) {
+	conn, err := net.DialTimeout(network, address, timeout)
+	if err != nil {
+		return nil, err
+	}
+	return NewClient(conn), err
+}

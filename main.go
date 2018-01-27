@@ -57,7 +57,7 @@ func setupLogger() {
 	if c.LogFile != "" {
 		f, err := os.Create(c.LogFile)
 		if err != nil {
-			log.Fatal("Error opening log file for writing: ", err)
+			log.Fatal("could not open log file for writing: ", err)
 		}
 		lc.W = f
 	}
@@ -65,7 +65,7 @@ func setupLogger() {
 		lc.Discard = true
 	}
 	logger.Configure(lc)
-	logger.Get().Debugln("Logger is configured.")
+	logger.Get().Debugln("logger is configured")
 }
 
 func main() {
@@ -84,6 +84,9 @@ func main() {
 	ews.SetDebug(false)
 	holdOpen := make(chan bool, 1)
 
+	if config.Get().DisableWebsocket && config.Get().DisableTCP {
+		logger.Get().Fatal("No servers configured for listening.  Bye!")
+	}
 	if !config.Get().DisableWebsocket {
 		go ws.StartServer()
 	}

@@ -21,11 +21,12 @@ const (
 	// TODO adjust - lower means more connections to pool, potentially fewer stales if that is a problem
 	maxProxyWorkers = 1024
 
-	retryDelay = 10 * time.Second
+	retryDelay = 60 * time.Second
 
 	donateCycle time.Duration = 3600 // seconds
 	// amount of time to keep the donate connection open after donation ends
 	donateShutdownDelay = 30 * time.Second
+	donateTimeout       = 10 * time.Second
 )
 
 var (
@@ -53,38 +54,6 @@ type Worker interface {
 	Disconnect()
 
 	NewJob(*Job)
-}
-
-type share struct {
-	AuthID string `json:"id"`
-	JobID  string `json:"job_id"`
-	Nonce  string `json:"nonce"`
-	Result string `json:"result"`
-
-	Error    chan error        `json:"-"`
-	Response chan *StatusReply `json:"-"`
-}
-
-// might return an invalid share, and that's fine - will fail validation
-func newShare(params map[string]interface{}) *share {
-	s := &share{
-		Error:    make(chan error, 1),
-		Response: make(chan *StatusReply, 1),
-	}
-
-	if jobID, ok := params["job_id"]; ok {
-		s.JobID = jobID.(string)
-	}
-
-	if nonce, ok := params["nonce"]; ok {
-		s.Nonce = nonce.(string)
-	}
-
-	if result, ok := params["result"]; ok {
-		s.Result = result.(string)
-	}
-
-	return s
 }
 
 // Proxy manages a group of workers.
@@ -211,7 +180,6 @@ func (p *Proxy) run() {
 		select {
 		// these are from workers
 		case s := <-p.submissions:
-			// logger.Get().Debugln("Submitting share to primary pool: ", s.JobID)
 			err := p.handleSubmit(s, p.SC)
 			if err != nil {
 				logger.Get().Println("share submission error: ", err)
@@ -223,7 +191,11 @@ func (p *Proxy) run() {
 			// }
 		case s := <-p.donations:
 			logger.Get().Debugln("donating share for job: ", s.JobID)
-			p.handleSubmit(s, p.DC) // donate server will handle it's own errors
+			err := p.handleSubmit(s, p.DC) // donate server will handle it's own errors
+			if err != nil {
+				logger.Get().Println("donate submission error: ", err)
+				return
+			}
 		case w := <-p.addWorker:
 			p.receiveWorker(w)
 		case w := <-p.delWorker:
@@ -263,7 +235,7 @@ func (p *Proxy) run() {
 
 func (p *Proxy) donate() {
 	// logger.Get().Debugln("Dialing out to: ", p.donateAddr)
-	dc, err := stratum.Dial("tcp", p.donateAddr)
+	dc, err := stratum.DialTimeout("tcp", p.donateAddr, donateTimeout)
 	if err != nil {
 		logger.Get().Debugln("Failed to connect to donate server")
 		return
@@ -276,7 +248,6 @@ func (p *Proxy) donate() {
 		err = reply.Error
 	}
 	if err != nil {
-		// retry or something
 		logger.Get().Debugln("Failed to login to donate server")
 		return
 	}
@@ -406,8 +377,8 @@ func (p *Proxy) login() error {
 		// this shouldn't happen
 	}
 
-	logger.Get().Println("*    Connected and logged in to pool server.    \t*")
-	logger.Get().Println("*    Broadcasting jobs to workers.    \t\t\t*")
+	logger.Get().Printf("****    Connected and logged in to pool server: %s \n", config.Get().PoolAddr)
+	logger.Get().Println("****    Broadcasting jobs to workers.")
 
 	// now we have a job, so release jobs
 	p.jobWaiter.Done()
@@ -429,12 +400,12 @@ func (p *Proxy) validateShare(s *share) error {
 	default:
 		return ErrBadJobID
 	}
-	for _, n := range job.SubmittedNonces {
-		if n == s.Nonce {
-			return ErrDuplicateShare
-		}
-	}
-	return nil
+	// for _, n := range job.SubmittedNonces {
+	// 	if n == s.Nonce {
+	// 		return ErrDuplicateShare
+	// 	}
+	// }
+	return s.validate(job)
 }
 
 func (p *Proxy) receiveWorker(w Worker) {
@@ -465,11 +436,11 @@ func (p *Proxy) configureDonations() {
 
 func (p *Proxy) shutdown() {
 	// kill worker connections - they should connect to a new proxy if active
-	// TODO - detect ban and wait before retrying?
 	p.ready = false
 	for _, w := range p.workers {
 		w.Disconnect()
 	}
+	<-time.After(1 * time.Minute)
 	p.director.removeProxy(p)
 }
 
@@ -507,7 +478,7 @@ func (p *Proxy) handleSubmit(s *share, c *stratum.Client) (err error) {
 		p.shares++
 	}
 
-	logger.Get().Debugf("proxy %v share submit response: %s", p.ID, reply)
+	// logger.Get().Debugf("proxy %v share submit response: %s", p.ID, reply)
 	s.Response <- &reply
 	s.Error <- nil
 	return

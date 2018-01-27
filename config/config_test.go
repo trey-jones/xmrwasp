@@ -158,7 +158,8 @@ func TestFileConfigAccuracyAgain(t *testing.T) {
         "url": "fakeURL",
         "login": "fakeLogin",
         "password": "fakePassword",
-        "log": "proxy.log"
+        "log": "proxy.log",
+        "valdateshares": 1
         }`)
 	err := configFromFile(cfg)
 	if err != nil {
@@ -177,4 +178,5 @@ func TestFileConfigAccuracyAgain(t *testing.T) {
 	require.Equal(t, 60, instance.StatInterval) // default
 	require.Equal(t, 2, instance.DonateLevel)   // default
 	require.Equal(t, "proxy.log", instance.LogFile)
+	require.Equal(t, 1, instance.ShareValidation)
 }
