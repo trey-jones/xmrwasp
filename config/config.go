@@ -46,7 +46,7 @@ type Config struct {
 
 	StatInterval int `envconfig:"stats" default:"60" json:"stats"`
 
-	ShareValidation int `envconfig:"validateshares" json:"validateshares"`
+	ShareValidation int `envconfig:"validateshares" json:"validateshares" default:"2"`
 
 	DonateLevel int `envconfig:"donate" default:"2" json:"donate"`
 

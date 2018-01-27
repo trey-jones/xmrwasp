@@ -111,7 +111,6 @@ XMRWASP_TLSKEY | tlscert | "" | Path to private key used to create the above cer
 XMRWASP_STATS | stats | 60 | XMR WASP will print a report to the log at this interval of seconds.
 XMRWASP_LOG | log | STDOUT | Path to your desired log file.  Will be created if necessary.  Takes precedence over `nolog`
 XMRWASP_NOLOG | nolog | false | If true, no log will be generated and nothing will be written to STDOUT.
-XMRWASP_VALIDATESHARES | validateshares | 0 | Validates correct job and no duplicates by default.  Increase for additional validation.  Currently only 0 and 1 are implemented.
 XMRWASP_DONATE | donate | 2 | Percentage of mining time to do jobs for the donation server.
 XMRWASP_DEBUG | debug | false | Print debug messages to the log.
 

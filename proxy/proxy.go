@@ -3,6 +3,7 @@ package proxy
 import (
 	"errors"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,9 +16,6 @@ const (
 	// MaxUint protects IDs from overflow if the process runs for thousands of years
 	MaxUint = ^uint64(0)
 
-	// TODO - worker could supply expected hashes?
-	expectedHashes = 0x7a120 // 500k, not really expected, just plenty of work
-
 	// TODO adjust - lower means more connections to pool, potentially fewer stales if that is a problem
 	maxProxyWorkers = 1024
 
@@ -27,11 +25,11 @@ const (
 	// amount of time to keep the donate connection open after donation ends
 	donateShutdownDelay = 30 * time.Second
 	donateTimeout       = 10 * time.Second
+
+	keepAliveInterval = 5 * time.Minute
 )
 
 var (
-	keepAliveInterval = 5 * time.Minute
-
 	ErrBadJobID       = errors.New("invalid job id")
 	ErrDuplicateShare = errors.New("duplicate share")
 	ErrMalformedShare = errors.New("malformed share")
@@ -136,7 +134,6 @@ func New(id uint64) *Proxy {
 
 	p.configureDonations()
 
-	// TODO how many routines does the proxy require by itself at this point?
 	go p.generateIDs()
 	go p.run()
 	return p
@@ -166,7 +163,7 @@ func (p *Proxy) run() {
 		// TODO allow fallback pools here
 		<-time.After(retryDelay)
 	}
-	// login blocks until first job is received
+
 	keepalive := time.NewTicker(keepAliveInterval)
 	donateStart := time.NewTimer(p.donateInterval)
 	donateEnd := time.NewTimer(p.donateLength)
@@ -183,12 +180,11 @@ func (p *Proxy) run() {
 			err := p.handleSubmit(s, p.SC)
 			if err != nil {
 				logger.Get().Println("share submission error: ", err)
+			}
+			if err != nil && strings.Contains(strings.ToLower(err.Error()), "banned") {
+				logger.Get().Println("Banned IP - killing proxy: ", p.ID)
 				return
 			}
-			// if err != nil && strings.Contains(strings.ToLower(err.Error()), "banned") {
-			// 	logger.Get().Println("Banned IP - killing proxy: ", p.ID)
-			// 	return
-			// }
 		case s := <-p.donations:
 			logger.Get().Debugln("donating share for job: ", s.JobID)
 			err := p.handleSubmit(s, p.DC) // donate server will handle it's own errors
@@ -237,7 +233,7 @@ func (p *Proxy) donate() {
 	// logger.Get().Debugln("Dialing out to: ", p.donateAddr)
 	dc, err := stratum.DialTimeout("tcp", p.donateAddr, donateTimeout)
 	if err != nil {
-		logger.Get().Debugln("Failed to connect to donate server")
+		logger.Get().Debugln("failed to connect to donate server")
 		return
 	}
 
@@ -248,7 +244,7 @@ func (p *Proxy) donate() {
 		err = reply.Error
 	}
 	if err != nil {
-		logger.Get().Debugln("Failed to login to donate server")
+		logger.Get().Debugln("failed to login to donate server")
 		return
 	}
 
@@ -258,10 +254,10 @@ func (p *Proxy) donate() {
 	p.jobMu.Unlock()
 	p.dnotify = p.DC.Notifications()
 
-	err = p.handleDonateJob(reply.Job)
-	if err != nil {
-		logger.Get().Println("Error handling new job from donation server.")
-		return
+	if err = reply.Job.init(); err != nil {
+		logger.Get().Println("bad job from donate login: ", reply.Job, " - err: ", err)
+	} else if err = p.handleDonateJob(reply.Job); err != nil {
+		logger.Get().Println("error handling new job from donation server: ", err)
 	}
 }
 
@@ -278,11 +274,8 @@ func (p *Proxy) undonate() {
 }
 
 func (p *Proxy) handleJob(job *Job) (err error) {
-	job.SubmittedNonces = make([]string, 0)
-
 	p.jobMu.Lock()
 	p.prevJob, p.currentJob = p.currentJob, job
-	p.currentNonce, p.currentBlob, err = job.Nonce()
 	p.jobMu.Unlock()
 
 	if err != nil || p.donating {
@@ -304,15 +297,12 @@ func (p *Proxy) broadcastJob() {
 }
 
 func (p *Proxy) handleDonateJob(job *Job) (err error) {
-	job.SubmittedNonces = make([]string, 0)
-
 	// we can use the same mutex here right?
 	p.jobMu.Lock()
 	if p.donateJob == nil {
 		p.donateJob = job
 	}
 	p.prevDonateJob, p.donateJob = p.donateJob, job
-	p.donateNonce, p.donateBlob, err = job.Nonce()
 	p.jobMu.Unlock()
 
 	// the donate client will remain connected for ~30s after donate period,
@@ -329,9 +319,11 @@ func (p *Proxy) handleDonateJob(job *Job) (err error) {
 func (p *Proxy) handleNotification(notif stratum.Notification, donate bool) {
 	switch notif.Method {
 	case "job":
-		// not a safe type assertion perhaps
-		job := NewJobFromServer(notif.Params.(map[string]interface{}))
-		var err error
+		job, err := NewJobFromServer(notif.Params.(map[string]interface{}))
+		if err != nil {
+			logger.Get().Println("bad job: ", notif.Params)
+			break
+		}
 		if !donate {
 			err = p.handleJob(job)
 		} else {
@@ -339,7 +331,7 @@ func (p *Proxy) handleNotification(notif stratum.Notification, donate bool) {
 		}
 		if err != nil {
 			// log and wait for the next job?
-			logger.Get().Println("Error processing job: ", job)
+			logger.Get().Println("error processing job: ", job)
 			logger.Get().Println(err)
 		}
 	default:
@@ -370,8 +362,10 @@ func (p *Proxy) login() error {
 	}
 	logger.Get().Debugln("Successfully logged into pool.")
 	p.authID = reply.ID
-	err = p.handleJob(reply.Job)
-	if err != nil {
+	if err = reply.Job.init(); err != nil {
+		logger.Get().Println("bad job from login: ", reply.Job, "- err: ", err)
+		// still just wait for the next job
+	} else if err = p.handleJob(reply.Job); err != nil {
 		logger.Get().Println("Error processing job: ", reply.Job)
 		// continue and just wait for the next job?
 		// this shouldn't happen
@@ -400,7 +394,7 @@ func (p *Proxy) validateShare(s *share) error {
 	default:
 		return ErrBadJobID
 	}
-	// for _, n := range job.SubmittedNonces {
+	// for _, n := range job.submittedNonces {
 	// 	if n == s.Nonce {
 	// 		return ErrDuplicateShare
 	// 	}
@@ -515,11 +509,9 @@ func (p *Proxy) NextJob() *Job {
 	defer p.jobMu.Unlock()
 	var j *Job
 	if !p.donating {
-		j = NewJob(p.currentBlob, p.currentNonce, p.currentJob.ID, p.currentJob.Target)
-		p.currentNonce += expectedHashes
+		j = p.currentJob.Next()
 	} else {
-		j = NewJob(p.donateBlob, p.donateNonce, p.donateJob.ID, p.donateJob.Target)
-		p.donateNonce += expectedHashes
+		j = p.donateJob.Next()
 	}
 
 	return j

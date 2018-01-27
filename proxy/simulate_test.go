@@ -3,6 +3,7 @@ package proxy
 import (
 	"flag"
 	"log"
+	"math"
 	"math/rand"
 	"net"
 	"net/http"
@@ -150,7 +151,7 @@ func (w *wsClient) sendAuth() {
 
 func (w *wsClient) sendSubmit() {
 	// limit number of duplicate shares
-	randomNonce := rand.Intn(99999999999)
+	randomNonce := rand.Intn(math.MaxUint32)
 	w.jobIDMu.Lock()
 	submitRequest := map[string]interface{}{
 		"type": "submit",
@@ -229,7 +230,10 @@ func (c *tcpClient) simulate(t *testing.T) {
 		select {
 		case notif := <-c.notify:
 			if notif.Method == "job" {
-				job := NewJobFromServer(notif.Params.(map[string]interface{}))
+				job, err := NewJobFromServer(notif.Params.(map[string]interface{}))
+				if err != nil {
+					t.Fatal("bad job from server: ", err)
+				}
 				c.jobIDMu.Lock()
 				c.jobID = job.ID
 				c.jobIDMu.Unlock()
@@ -364,7 +368,8 @@ func setEnv() {
 	os.Setenv("XMRWASP_LOGIN", "testwallet")
 	os.Setenv("XMRWASP_PASSWORD", "x")
 	os.Setenv("XMRWASP_URL", mockPoolURL)
-	os.Setenv("XMRWASP_DONATE", "98")
+	// os.Setenv("XMRWASP_DONATE", "98")
+	os.Setenv("XMRWASP_VALIDATESHARES", "1")
 }
 
 func configure() {

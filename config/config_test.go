@@ -27,10 +27,11 @@ func testSetRequiredEnvConfigs() {
 func testGetConfigDefaults() (defaultStrings map[string]string, defaultInts map[int]int, defaultBools map[bool]bool) {
 	defaultStrings = map[string]string{}
 	defaultInts = map[int]int{
-		instance.StatInterval:  60,
-		instance.DonateLevel:   2,
-		instance.WebsocketPort: 8080,
-		instance.StratumPort:   1111,
+		instance.StatInterval:    60,
+		instance.DonateLevel:     2,
+		instance.WebsocketPort:   8080,
+		instance.StratumPort:     1111,
+		instance.ShareValidation: 2,
 	}
 	defaultBools = map[bool]bool{
 		instance.DisableWebsocket: false,

@@ -10,15 +10,21 @@ import (
 )
 
 const (
+	_ = iota
 	// ValidateNormal just checks that there is a valid job ID and the share is
 	// not a duplicate for this job
-	ValidateNormal = iota
+	ValidateNormal
 
-	// ValidateExtra checks that the result difficulty meets the target
-	ValidateExtra
+	// ValidateFormat checks the results and nonce for valid size
+	ValidateFormat
 
-	// TODO ValidateFull checks nonce against blob for result
+	// ValidateDiff checks that the result difficulty meets the target
+	// NOT WORKING - the idea would be to include previous levels also
+	ValidateDiff
+
+	// ValidateFull TODO checks nonce against blob for result
 	// maybe not worth it!
+	ValidateFull
 )
 
 const (
@@ -66,28 +72,42 @@ func newShare(params map[string]interface{}) *share {
 
 func (s *share) validate(j *Job) error {
 	// normal validate for no duplicate
-	for _, n := range j.SubmittedNonces {
+	for _, n := range j.submittedNonces {
 		if n == s.Nonce {
 			return ErrDuplicateShare
 		}
 	}
+
 	validateLevel := config.Get().ShareValidation
-	if validateLevel > ValidateNormal {
-		// second level validation - make sure diff is high enough
-		err := s.validateDifficulty(j)
-		if err != nil {
+	if validateLevel >= ValidateFormat {
+		if err := s.validateFormat(); err != nil {
 			return err
 		}
 	}
 
-	if validateLevel > ValidateExtra {
+	if validateLevel >= ValidateDiff {
+		if err := s.validateDifficulty(j); err != nil {
+			return err
+		}
+	}
+
+	if validateLevel >= ValidateFull {
 		return s.validateResult(j)
 	}
 
 	return nil
 }
 
+func (s *share) validateFormat() error {
+	if len(s.Nonce) != 8 || len(s.Result) != 64 {
+		return ErrMalformedShare
+	}
+	return nil
+}
+
+// Disabled, not working
 func (s *share) validateDifficulty(j *Job) error {
+	return nil
 	target, err := j.getTargetUint64()
 	if err != nil {
 		// don't try to validate, just record so we can fix later
@@ -101,6 +121,7 @@ func (s *share) validateDifficulty(j *Job) error {
 		return err
 	}
 
+	logger.Get().Debugf("comparing result %v < target %v", result, target)
 	if result < target {
 		return ErrDiffTooLow
 	}
