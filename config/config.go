@@ -159,7 +159,8 @@ func Get() *Config {
 	var err error
 	instantiation.Do(func() {
 		if File != "" {
-			f, err := os.Open(File)
+			var f *os.File
+			f, err = os.Open(File)
 			if err != nil {
 				log.Fatal("open config file failed: ", err)
 				return

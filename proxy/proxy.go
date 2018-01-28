@@ -88,14 +88,10 @@ type Proxy struct {
 
 	ready bool
 
-	currentJob   *Job
-	currentBlob  []byte
-	currentNonce uint32
-	prevJob      *Job
+	currentJob *Job
+	prevJob    *Job
 
 	donateJob     *Job
-	donateBlob    []byte
-	donateNonce   uint32
 	prevDonateJob *Job
 
 	jobMu     sync.Mutex

@@ -368,7 +368,6 @@ func setEnv() {
 	os.Setenv("XMRWASP_LOGIN", "testwallet")
 	os.Setenv("XMRWASP_PASSWORD", "x")
 	os.Setenv("XMRWASP_URL", mockPoolURL)
-	// os.Setenv("XMRWASP_DONATE", "98")
 	os.Setenv("XMRWASP_VALIDATESHARES", "1")
 }
 
