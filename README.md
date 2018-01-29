@@ -1,6 +1,6 @@
 # XMR WASP
 
-XMR is a **W**ebsocket **A**nd **S**tratum **P**roxy for Monero (XMR) miners.  It accepts connections from miners over both websocket and plain TCP sockets using the monero stratum protocol.  Written in Go and partly inspired by XMRig-Proxy.
+XMR WASP is a **W**ebsocket **A**nd **S**tratum **P**roxy for Monero (XMR) miners.  It accepts connections from miners over both websocket and plain TCP sockets using the monero stratum protocol.  Written in Go and partly inspired by XMRig-Proxy.
 
 ## Goals
 
