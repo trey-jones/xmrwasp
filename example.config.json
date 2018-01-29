@@ -5,5 +5,5 @@
     "password": "x",
     "url": "xmrpool.eu:3333",
 
-    "debug": true
+    "debug": false
 }

@@ -41,7 +41,11 @@ As long as you don't pass the `-d` flag, `go get` will install the package as we
 
 To use XMR WASP just execute the binary as in the examples (unix):
 
+#### Using a JSON config file
+
 `xmrwasp -c example/example.config.json &`
+
+#### Setting Environment at Runtime
 
 ```bash
 XMRWASP_URL='xmrpool.eu:3333' \
