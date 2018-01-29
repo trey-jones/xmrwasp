@@ -92,7 +92,7 @@ Configuration can be done via system environment variables, or by invoking `xmrw
 
 #### Required Configuration Options
 
-Environment | JSON |
+Environment | JSON | Desc.
 ----------- | ---- | ------------
 XMRWASP_URL | url | Address of mining pool you will connect to. Without protocol.
 XMRWASP_LOGIN | login | Login (often your monero address) used to connect to the mining pool.
@@ -100,7 +100,7 @@ XMRWASP_PASSWORD | password | Password used to connect to the mining pool.
 
 #### All Configuration Options
 
-Environment | JSON | Default |
+Environment | JSON | Default | Desc.
 ----------- | ---- | ------- | ------------
 XMRWASP_NOWEB | noweb | false | Don't serve websocket connections.
 XMRWASP_NOTCP | notcp | true | Don't serve stratum+tcp connections.
